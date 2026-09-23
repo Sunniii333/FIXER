@@ -20,3 +20,7 @@ The backend only ever sees `{ subscriptionId, dueAt, kind, count? }`, never Miss
 - [ ] Notification text is generic (no Instruction or Mission name)
 - [ ] Seam-2 tests drive `dueReminders` with a fake Clock, an in-memory store and a fake Push-sender, and assert only generic fields reach it
 - [ ] **Open decision — tick cadence:** Vercel Hobby cron runs at most once a day, but this alert needs roughly one tick a minute. Build the tick as an idempotent, secret-protected route, and confirm with the owner whether it's driven by Vercel Pro cron or an external scheduler before deploying
+
+## Comments
+
+- 2026-09-23 — Tick cadence decided by the owner: an external scheduler (not Vercel Pro cron) calls `GET /api/tick` every minute with `Authorization: Bearer $CRON_SECRET`. Recorded in ADR-0003.

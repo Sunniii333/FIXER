@@ -24,5 +24,8 @@ did this is dropped in favour of an installable web app that also works on iOS a
 
 - Reminder delivery needs a network connection at the moment it fires; everything else is offline.
 - On iOS, Web Push only works once installed to the home screen; the app says so.
-- The tick needs roughly one call a minute: Vercel Pro cron or an external scheduler
-  (Hobby cron runs at most daily). Still to be chosen by the owner.
+- The tick needs roughly one call a minute; Vercel Hobby cron runs at most daily. **Decided:** an
+  external scheduler (e.g. cron-job.org, free, every minute) calls `GET /api/tick` with the header
+  `Authorization: Bearer $CRON_SECRET`. No `vercel.json` cron. The secret goes in a header, never
+  the URL, so it doesn't land in request logs. A missed or doubled tick is harmless: the tick is
+  idempotent and anything over 15 minutes late is skipped.
