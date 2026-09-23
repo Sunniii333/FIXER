@@ -395,6 +395,50 @@ describe('Review', () => {
   })
 })
 
+describe('export and import', () => {
+  async function withData() {
+    const s = await setup()
+    await s.fixer.savePerson({ id: 'p1', name: 'พี่เอ', canHelpWith: ['skill'] })
+    await activeMission(s.fixer, 'm1')
+    await s.fixer.replan('m1', { reason: 'scope', step: 'x' })
+    await s.fixer.receive('d1')
+    return s
+  }
+
+  it('round-trips Missions, People and Settings through a versioned file, and records lastExportAt', async () => {
+    const { fixer, clock } = await withData()
+    clock.advance(MIN)
+    const file = await fixer.exportData()
+    expect(JSON.parse(file)).toMatchObject({ version: 1, missions: expect.any(Array), people: expect.any(Array) })
+    expect(fixer.settings().lastExportAt).toBe(T0 + MIN)
+
+    const other = (await setup()).fixer
+    await activeMission(other, 'mine')
+    const parsed = other.parseImport(file)
+    if (!parsed.ok) throw new Error(parsed.error)
+    expect(parsed.compare).toEqual({ file: { missions: 2, people: 1 }, device: { missions: 1, people: 0 } })
+    await other.replaceAll(parsed.data)
+    expect(other.missions().map((m) => m.id)).toEqual(['m1', 'd1'])
+    expect(other.mission('m1')).toEqual(fixer.mission('m1'))
+    expect(other.people()).toEqual(fixer.people())
+    expect(other.settings()).toEqual(fixer.settings())
+  })
+
+  it.each([
+    ['not JSON', '{oops'],
+    ['wrong shape', JSON.stringify({ version: 1, missions: 'nope', people: [], settings: {} })],
+    ['a bad Mission', JSON.stringify({ version: 1, missions: [{ id: 1 }], people: [], settings: {} })],
+    ['a newer version', JSON.stringify({ version: 2, missions: [], people: [], settings: {} })],
+  ])('rejects %s with a message and leaves the data alone', async (_, text) => {
+    const { fixer, reload } = await withData()
+    const before = structuredClone(fixer.missions())
+    const parsed = fixer.parseImport(text)
+    expect(parsed).toEqual({ ok: false, error: expect.any(String) })
+    expect(fixer.missions()).toEqual(before)
+    expect((await reload()).missions()).toEqual(before)
+  })
+})
+
 describe('People', () => {
   it('adds, edits and removes People, persisted; roles belong to each Mission', async () => {
     const { fixer, reload } = await setup()

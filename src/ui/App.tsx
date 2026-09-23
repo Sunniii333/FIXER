@@ -7,6 +7,7 @@ import { MissionPage } from './MissionPage'
 import { EditForm, Walkthrough } from './EditMission'
 import { People } from './People'
 import { Review } from './Review'
+import { Settings } from './Settings'
 
 /** Share: the native share sheet where there is one, else the clipboard. */
 export type Share = { share(text: string): Promise<'shared' | 'copied'> }
@@ -81,6 +82,8 @@ export function App({ ports }: { ports: Ports }) {
           <People ui={ui} />
         ) : screen === 'review' ? (
           <Review ui={ui} />
+        ) : screen === 'settings' ? (
+          <Settings ui={ui} />
         ) : screen === 'receive' ? (
           <Receive ui={ui} captureId={param} />
         ) : !fixer.mission(param) ? (
@@ -113,6 +116,7 @@ export function App({ ports }: { ports: Ports }) {
           ['', 'หน้าหลัก'],
           ['people', 'คน'],
           ['review', 'ทบทวน'],
+          ['settings', 'ตั้งค่า'],
         ].map(([path, label]) => (
           <button key={path} aria-current={(screen || '') === path ? 'page' : undefined} onClick={() => go(path)}>
             {label}

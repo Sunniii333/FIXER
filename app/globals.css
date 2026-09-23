@@ -206,3 +206,7 @@ p.tag { margin: 0; font-size: .9rem; }
 .segmented button + button { border-left: 3px solid var(--line); }
 .segmented button[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); }
 section h2 { font-size: 1rem; }
+.confirm { padding: 12px; border: 3px solid var(--line); border-radius: 6px; background: var(--surface); box-shadow: var(--shadow); }
+table { border-collapse: collapse; }
+th, td { border: 2px solid var(--line); padding: 4px 10px; text-align: left; }
+input[type='file'] { padding: 8px; }

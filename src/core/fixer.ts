@@ -292,6 +292,50 @@ export class Fixer {
     }
   }
 
+  settings(): Settings {
+    return this.data.settings
+  }
+
+  /** The whole store as a versioned JSON file. Records lastExportAt. */
+  async exportData() {
+    this.data.settings.lastExportAt = this.clock.now()
+    await this.save()
+    return JSON.stringify({ version: EXPORT_VERSION, exportedAt: this.clock.now(), ...this.data }, null, 2)
+  }
+
+  /** Validates an import file without touching anything; `replaceAll` does the replacing. */
+  parseImport(text: string):
+    | { ok: true; data: Data; compare: Record<'file' | 'device', { missions: number; people: number }> }
+    | { ok: false; error: string } {
+    let raw: unknown
+    try {
+      raw = JSON.parse(text)
+    } catch {
+      return { ok: false, error: 'ไฟล์นี้ไม่ใช่ไฟล์สำรองของ The Fixer (อ่าน JSON ไม่ได้)' }
+    }
+    const f = raw as Record<string, unknown>
+    if (typeof f !== 'object' || f === null) return { ok: false, error: 'รูปแบบไฟล์ไม่ถูกต้อง' }
+    if (f.version !== EXPORT_VERSION)
+      return { ok: false, error: `ไฟล์เป็นเวอร์ชัน ${String(f.version)} แต่แอปนี้อ่านได้เฉพาะเวอร์ชัน ${EXPORT_VERSION}` }
+    if (!Array.isArray(f.missions) || !Array.isArray(f.people) || typeof f.settings !== 'object' || !f.settings)
+      return { ok: false, error: 'รูปแบบไฟล์ไม่ถูกต้อง: ต้องมีภารกิจ รายชื่อคน และการตั้งค่า' }
+    if (!f.missions.every(isMission)) return { ok: false, error: 'รูปแบบไฟล์ไม่ถูกต้อง: ข้อมูลภารกิจบางรายการเสีย' }
+    if (!f.people.every(isPerson)) return { ok: false, error: 'รูปแบบไฟล์ไม่ถูกต้อง: ข้อมูลรายชื่อคนบางรายการเสีย' }
+    const data: Data = {
+      missions: f.missions,
+      people: f.people,
+      settings: { ...defaultSettings, ...(f.settings as Partial<Settings>) },
+    }
+    const count = (d: Data) => ({ missions: d.missions.length, people: d.people.length })
+    return { ok: true, data, compare: { file: count(data), device: count(this.data) } }
+  }
+
+  /** Replaces everything (no merging). Only after the owner confirmed the comparison. */
+  async replaceAll(data: Data) {
+    this.data = structuredClone(data)
+    await this.save()
+  }
+
   /** The Review screen, for Missions received within [from, to]. */
   review({ from, to }: { from: number; to: number }) {
     const now = this.clock.now()
@@ -425,4 +469,28 @@ function overdue(m: Mission, now: number) {
 export function monthKey(ms: number) {
   const d = new Date(ms)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+const EXPORT_VERSION = 1
+const statuses: Status[] = ['draft', 'active', 'done', 'dropped']
+const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null
+
+function isMission(x: unknown): x is Mission {
+  return (
+    isObj(x) &&
+    typeof x.id === 'string' &&
+    typeof x.instruction === 'string' &&
+    statuses.includes(x.status as Status) &&
+    typeof x.createdAt === 'number' &&
+    Array.isArray(x.helperIds) &&
+    Array.isArray(x.steps) &&
+    x.steps.every((s) => isObj(s) && typeof s.id === 'string' && typeof s.text === 'string' && typeof s.startedAt === 'number') &&
+    Array.isArray(x.replans) &&
+    x.replans.every((r) => isObj(r) && replanReasons.includes(r.reason as ReplanReason)) &&
+    Array.isArray(x.history)
+  )
+}
+
+function isPerson(x: unknown): x is Person {
+  return isObj(x) && typeof x.id === 'string' && typeof x.name === 'string' && Array.isArray(x.canHelpWith)
 }
