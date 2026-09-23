@@ -121,21 +121,48 @@ export function App({ ports }: { ports: Ports }) {
 
 export const missionPath = (m: Mission) => (m.status === 'draft' ? `receive/${m.id}` : `m/${m.id}`)
 
+function StatsStrip({ ui }: { ui: Ui }) {
+  const s = ui.fixer.stats()
+  const pct = s.rate.total ? Math.round((100 * s.rate.onTime) / s.rate.total) : undefined
+  return (
+    <dl className="stats" aria-label="สถิติ">
+      <div>
+        <dt>เริ่มทันเวลา (เดือนนี้)</dt>
+        <dd>{pct === undefined ? '—' : `${pct}%`}</dd>
+        <small>{s.rate.onTime}/{s.rate.total}</small>
+      </div>
+      <div>
+        <dt>ปิดเดือนนี้</dt>
+        <dd>{s.closedThisMonth}</dd>
+      </div>
+      <div className={s.overdue ? 'hot' : ''}>
+        <dt>ค้างอยู่</dt>
+        <dd>{s.open}</dd>
+        {s.overdue > 0 && <small>เลยกำหนด {s.overdue}</small>}
+      </div>
+    </dl>
+  )
+}
+
 const statusLabel = { draft: 'ร่าง', active: 'กำลังทำ', done: 'เสร็จแล้ว', dropped: 'ยกเลิกแล้ว' }
 
 function Home({ ui }: { ui: Ui }) {
-  const all = ui.fixer.missions()
-  const missions = all.filter((m) => m.status !== 'dropped')
-  const dropped = all.filter((m) => m.status === 'dropped')
+  const missions = ui.fixer.homeList()
+  const dropped = ui.fixer.missions().filter((m) => m.status === 'dropped')
   return (
     <>
       <h1>ภารกิจ</h1>
+      <StatsStrip ui={ui} />
       {missions.length === 0 && <p className="muted">ยังไม่มีภารกิจ กด “รับภารกิจ” เมื่อได้รับงาน</p>}
       <ul className="list">
         {missions.map((m) => (
           <li key={m.id}>
             <a className="card" href={`#/${missionPath(m)}`}>
-              <span className="tag">{statusLabel[m.status]}</span>
+              {ui.fixer.isOverdue(m.id) ? (
+                <span className="tag bad">เลยกำหนด</span>
+              ) : (
+                <span className="tag">{statusLabel[m.status]}</span>
+              )}
               <span>{m.instruction || '(ยังไม่มีคำสั่งงาน)'}</span>
             </a>
           </li>

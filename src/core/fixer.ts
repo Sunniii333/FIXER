@@ -249,6 +249,49 @@ export class Fixer {
     return true
   }
 
+  isOverdue(id: string) {
+    return overdue(this.get(id), this.clock.now())
+  }
+
+  /** Home order: overdue → not started (Drafts included) → in progress → done. Dropped live in the history. */
+  homeList(): Mission[] {
+    const now = this.clock.now()
+    const rank = (m: Mission) =>
+      overdue(m, now) ? 0 : m.status === 'done' ? 3 : m.steps.some((s) => s.outcome) ? 2 : 1
+    return this.data.missions
+      .filter((m) => m.status !== 'dropped')
+      .map((m) => ({ m, r: rank(m) }))
+      .sort((a, b) => a.r - b.r || b.m.createdAt - a.m.createdAt)
+      .map(({ m }) => m)
+  }
+
+  /** On-time start rate per month received. Missions still inside their five minutes are left out. */
+  rateByMonth(): Record<string, { onTime: number; total: number }> {
+    const now = this.clock.now()
+    const out: Record<string, { onTime: number; total: number }> = {}
+    for (const m of this.data.missions) {
+      const result = onTime(m, now)
+      if (result === undefined) continue
+      const bucket = (out[monthKey(m.createdAt)] ??= { onTime: 0, total: 0 })
+      bucket.total++
+      if (result) bucket.onTime++
+    }
+    return out
+  }
+
+  /** Home tiles. */
+  stats() {
+    const now = this.clock.now()
+    const month = monthKey(now)
+    const open = this.data.missions.filter((m) => m.status === 'draft' || m.status === 'active')
+    return {
+      rate: this.rateByMonth()[month] ?? { onTime: 0, total: 0 },
+      closedThisMonth: this.data.missions.filter((m) => m.status === 'done' && monthKey(m.doneAt!) === month).length,
+      open: open.length,
+      overdue: open.filter((m) => overdue(m, now)).length,
+    }
+  }
+
   /** Ready-to-send Thai sentence for the Assigner; four fixed templates by state. */
   statusSentence(id: string): string | undefined {
     const m = this.get(id)
@@ -344,3 +387,13 @@ export type MissionPatch = Partial<
     | 'planB'
   >
 > & { firstStep?: string }
+
+/** Past its real date and not closed. Text-only deadlines can't be overdue. */
+function overdue(m: Mission, now: number) {
+  return (m.status === 'draft' || m.status === 'active') && m.deadlineAt !== undefined && now > m.deadlineAt
+}
+
+export function monthKey(ms: number) {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}

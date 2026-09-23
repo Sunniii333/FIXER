@@ -277,6 +277,67 @@ describe('Status sentence', () => {
   })
 })
 
+describe('home list and stats', () => {
+  it('orders overdue, then not started (Drafts included), then in progress, then done; Dropped left out', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer, 'done')
+    await fixer.close('done')
+    await activeMission(fixer, 'progress')
+    await fixer.completeStep('progress')
+    await fixer.receive('draft')
+    await activeMission(fixer, 'notStarted')
+    await activeMission(fixer, 'late')
+    await fixer.edit('late', { deadlineAt: T0 + DAY })
+    await activeMission(fixer, 'textOnly')
+    await fixer.edit('textOnly', { deadlineText: 'เร็วๆ นี้' })
+    await activeMission(fixer, 'gone')
+    await fixer.drop('gone', 'ไม่ต้องทำแล้ว')
+    clock.advance(2 * DAY)
+
+    const order = fixer.homeList().map((m) => m.id)
+    expect(order[0]).toBe('late')
+    expect(order.slice(1, 4).sort()).toEqual(['draft', 'notStarted', 'textOnly'])
+    expect(order.slice(4)).toEqual(['progress', 'done'])
+    expect(fixer.isOverdue('late')).toBe(true)
+    expect(fixer.isOverdue('textOnly')).toBe(false)
+  })
+
+  it('counts every resolved Mission in the On-time start rate, by month received', async () => {
+    const { fixer, clock } = await setup()
+    // August: one on-time start, one late
+    clock.set(new Date(2026, 7, 10, 9, 0).getTime())
+    await activeMission(fixer, 'aug-ontime')
+    await fixer.completeStep('aug-ontime')
+    await activeMission(fixer, 'aug-late')
+    clock.advance(6 * MIN)
+    await fixer.completeStep('aug-late')
+
+    // September: on-time, missed (no tap), closed without First step, Dropped, pending, deleted
+    clock.set(T0)
+    await activeMission(fixer, 'ontime')
+    clock.advance(MIN)
+    await fixer.completeStep('ontime')
+    await fixer.close('ontime')
+    await activeMission(fixer, 'missed')
+    await activeMission(fixer, 'closedNoStep')
+    await fixer.close('closedNoStep')
+    await fixer.receive('dropped')
+    await fixer.drop('dropped', 'ยกเลิก')
+    await activeMission(fixer, 'deleted')
+    await fixer.completeStep('deleted')
+    await fixer.delete('deleted')
+    clock.advance(6 * MIN)
+    await activeMission(fixer, 'pending')
+    await fixer.reopen('ontime', 'ต่ออีกนิด')
+
+    expect(fixer.rateByMonth()).toEqual({
+      '2026-08': { onTime: 1, total: 2 },
+      '2026-09': { onTime: 1, total: 4 },
+    })
+    expect(fixer.stats()).toEqual({ rate: { onTime: 1, total: 4 }, closedThisMonth: 1, open: 5, overdue: 0 })
+  })
+})
+
 describe('People', () => {
   it('adds, edits and removes People, persisted; roles belong to each Mission', async () => {
     const { fixer, reload } = await setup()

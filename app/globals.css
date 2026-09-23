@@ -195,3 +195,9 @@ p.tag { margin: 0; font-size: .9rem; }
 .history summary { font-weight: 700; cursor: pointer; padding: 8px 0; }
 .status { display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--surface); border: 3px solid var(--line); border-left: 10px solid var(--accent); border-radius: 6px; }
 .status p { margin: 0; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 16px; }
+.stats > div { background: var(--surface); border: 3px solid var(--line); box-shadow: var(--shadow); border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; }
+.stats > div.hot { background: var(--danger); color: #fff; }
+.stats dt { font-size: .75rem; font-weight: 700; }
+.stats dd { margin: 0; font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+.stats small { font-size: .75rem; }
