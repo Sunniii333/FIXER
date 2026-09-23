@@ -64,3 +64,79 @@ describe('receiving a Mission', () => {
     )
   })
 })
+
+async function activeMission(fixer: Fixer, id = 'm1', first = 'ก้าวแรก') {
+  await fixer.receive(id)
+  await fixer.edit(id, { instruction: `งาน ${id}`, firstStep: first })
+  await fixer.activate(id)
+}
+
+describe('Five-minute clock and First-step tap', () => {
+  it('counts down from createdAt, also on a Draft, and survives a reload', async () => {
+    const { fixer, clock, reload } = await setup()
+    await fixer.receive('m1')
+    clock.advance(2 * MIN)
+    expect(fixer.countdown('m1')).toBe(3 * MIN)
+    clock.advance(4 * MIN)
+    expect((await reload()).countdown('m1')).toBe(0)
+  })
+
+  it('records the tap time as the First step doneAt; within five minutes is an On-time start', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer)
+    clock.advance(5 * MIN)
+    await fixer.completeStep('m1')
+    expect(fixer.mission('m1')!.steps[0]).toMatchObject({ doneAt: T0 + 5 * MIN, outcome: 'done' })
+    expect(fixer.onTimeStart('m1')).toBe(true)
+    expect(fixer.countdown('m1')).toBeUndefined()
+  })
+
+  it('records a late tap truthfully but not as an On-time start', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer)
+    clock.advance(5 * MIN + 1000)
+    await fixer.completeStep('m1')
+    expect(fixer.mission('m1')!.steps[0].doneAt).toBe(T0 + 5 * MIN + 1000)
+    expect(fixer.onTimeStart('m1')).toBe(false)
+  })
+
+  it('leaves the result pending inside five minutes, and a miss once they pass with no tap', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer)
+    clock.advance(4 * MIN)
+    expect(fixer.onTimeStart('m1')).toBeUndefined()
+    clock.advance(1 * MIN + 1)
+    expect(fixer.onTimeStart('m1')).toBe(false)
+  })
+})
+
+describe('the Step chain', () => {
+  const current = (fixer: Fixer) => fixer.mission('m1')!.steps.filter((s) => !s.outcome)
+
+  it('opens exactly one next Step, current from the tap, which must be named before it can be completed', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer)
+    clock.advance(MIN)
+    await fixer.completeStep('m1')
+    expect(current(fixer)).toEqual([expect.objectContaining({ text: '', startedAt: T0 + MIN })])
+    await expect(fixer.completeStep('m1')).rejects.toThrow()
+    await fixer.editStep('m1', current(fixer)[0].id, 'โทรหาฝ่ายบัญชี')
+    clock.advance(MIN)
+    await fixer.completeStep('m1')
+    expect(current(fixer)).toHaveLength(1)
+    expect(fixer.mission('m1')!.steps.map((s) => s.outcome)).toEqual(['done', 'done', undefined])
+  })
+
+  it('keeps the original text of an edited done Step in History and never moves its times', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer, 'm1', 'เปิดไฟล')
+    clock.advance(MIN)
+    await fixer.completeStep('m1')
+    const before = structuredClone(fixer.mission('m1')!.steps[0])
+    clock.advance(MIN)
+    await fixer.editStep('m1', before.id, 'เปิดไฟล์')
+    const m = fixer.mission('m1')!
+    expect(m.steps[0]).toEqual({ ...before, text: 'เปิดไฟล์' })
+    expect(m.history).toEqual([{ at: T0 + 2 * MIN, field: `step:${before.id}`, oldValue: 'เปิดไฟล' }])
+  })
+})

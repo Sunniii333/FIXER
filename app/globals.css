@@ -142,3 +142,23 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
   padding: 12px 4px;
 }
 .tabbar button[aria-current='page'] { background: var(--accent); color: var(--accent-ink); }
+
+.clock {
+  font-size: 3.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  padding: 8px 16px;
+  align-self: flex-start;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 3px solid var(--line);
+  box-shadow: var(--shadow);
+  border-radius: 6px;
+}
+.clock.over { background: var(--danger); color: #fff; }
+.steps { margin: 0; padding-left: 1.4rem; display: flex; flex-direction: column; gap: 8px; }
+.step { display: flex; flex-direction: column; }
+.step.done > span { text-decoration: line-through; text-decoration-thickness: 2px; }
+.step.abandoned > span { text-decoration: line-through wavy var(--danger); color: var(--muted); }
+.step.current > span { font-weight: 700; }
