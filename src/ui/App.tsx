@@ -7,7 +7,7 @@ import { MissionPage } from './MissionPage'
 import { EditForm, Walkthrough } from './EditMission'
 import { People } from './People'
 import { Review } from './Review'
-import { Settings } from './Settings'
+import { Rules, Settings } from './Settings'
 
 /** Share: the native share sheet where there is one, else the clipboard. */
 export type Share = { share(text: string): Promise<'shared' | 'copied'> }
@@ -57,6 +57,12 @@ export function App({ ports }: { ports: Ports }) {
     Fixer.open(ports.clock, ports.storage).then(setFixer)
   }, [ports])
 
+  // The theme is a device-only preference: applied here, never synced anywhere.
+  const theme = fixer?.settings().theme
+  useEffect(() => {
+    if (theme) document.documentElement.dataset.theme = theme
+  }, [theme])
+
   if (!fixer) return null
   const ui: Ui = {
     fixer,
@@ -84,6 +90,8 @@ export function App({ ports }: { ports: Ports }) {
           <Review ui={ui} />
         ) : screen === 'settings' ? (
           <Settings ui={ui} />
+        ) : screen === 'rules' ? (
+          <Rules />
         ) : screen === 'receive' ? (
           <Receive ui={ui} captureId={param} />
         ) : !fixer.mission(param) ? (

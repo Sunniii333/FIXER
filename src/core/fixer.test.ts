@@ -439,6 +439,21 @@ describe('export and import', () => {
   })
 })
 
+describe('Settings', () => {
+  it('starts from the defaults and keeps changes across a reload', async () => {
+    const { fixer, reload } = await setup()
+    expect(fixer.settings()).toEqual({
+      reminderEnabled: true,
+      reviewTime: '20:00',
+      deadlineTime: '09:00',
+      stuckAfter: 30,
+      theme: 'light',
+    })
+    await fixer.updateSettings({ stuckAfter: 45, theme: 'dark' })
+    expect((await reload()).settings()).toMatchObject({ stuckAfter: 45, theme: 'dark', reviewTime: '20:00' })
+  })
+})
+
 describe('People', () => {
   it('adds, edits and removes People, persisted; roles belong to each Mission', async () => {
     const { fixer, reload } = await setup()

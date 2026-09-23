@@ -48,3 +48,26 @@ it('rejects a bad import file with a clear message', async () => {
   await expect.poll(() => screen.getByRole('alert').query()?.textContent).toContain('เวอร์ชัน 9')
   await expect.element(screen.getByRole('dialog')).not.toBeInTheDocument()
 })
+
+it('the dark toggle applies at once and survives a reload', async () => {
+  const ports = fakePorts()
+  const screen = await render(<App ports={ports} />)
+  const bg = () => getComputedStyle(document.body).backgroundColor
+  const light = bg()
+  await screen.getByRole('button', { name: 'ตั้งค่า' }).click()
+  await screen.getByLabelText('โหมดมืด').click()
+  await expect.poll(() => document.documentElement.dataset.theme).toBe('dark')
+  expect(bg()).not.toBe(light)
+
+  await screen.unmount()
+  delete document.documentElement.dataset.theme
+  await render(<App ports={ports} />)
+  await expect.poll(() => document.documentElement.dataset.theme).toBe('dark')
+})
+
+it('shows the nine rules', async () => {
+  const screen = await render(<App ports={fakePorts()} />)
+  await screen.getByRole('button', { name: 'ตั้งค่า' }).click()
+  await screen.getByRole('button', { name: 'กฎ 9 ข้อของ The Fixer' }).click()
+  await expect.poll(() => screen.getByRole('listitem').elements().length).toBe(9)
+})

@@ -7,7 +7,71 @@ export function Settings({ ui }: { ui: Ui }) {
   return (
     <div className="stack">
       <h1>ตั้งค่า</h1>
+      <Prefs ui={ui} />
       <Backup ui={ui} />
+      <button onClick={() => ui.go('rules')}>กฎ 9 ข้อของ The Fixer</button>
+    </div>
+  )
+}
+
+function Prefs({ ui }: { ui: Ui }) {
+  const s = ui.fixer.settings()
+  const set = (patch: Parameters<Ui['fixer']['updateSettings']>[0]) => ui.run(() => ui.fixer.updateSettings(patch))
+  return (
+    <section className="stack" aria-label="การตั้งค่า">
+      <label className="check">
+        <input type="checkbox" checked={s.theme === 'dark'} onChange={(e) => set({ theme: e.target.checked ? 'dark' : 'light' })} />
+        โหมดมืด
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={s.reminderEnabled} onChange={(e) => set({ reminderEnabled: e.target.checked })} />
+        เปิดการแจ้งเตือน
+      </label>
+      <label>
+        เตือนว่าติดขัดเมื่อก้าวเดียวนานเกิน (นาที)
+        <input
+          type="number"
+          min={5}
+          max={600}
+          inputMode="numeric"
+          value={s.stuckAfter}
+          onChange={(e) => e.target.valueAsNumber >= 1 && set({ stuckAfter: Math.round(e.target.valueAsNumber) })}
+        />
+      </label>
+      <label>
+        เวลาเตือนทบทวนประจำวัน
+        <input type="time" value={s.reviewTime} onChange={(e) => e.target.value && set({ reviewTime: e.target.value })} />
+      </label>
+      <label>
+        เวลาเตือนวันครบกำหนด
+        <input type="time" value={s.deadlineTime} onChange={(e) => e.target.value && set({ deadlineTime: e.target.value })} />
+      </label>
+    </section>
+  )
+}
+
+// ponytail: placeholder wording — the owner will supply the final nine rules
+const rules = [
+  'รับงานแล้ว ลงมือก้าวแรกภายใน 5 นาที',
+  'ก้าวแรกต้องเป็นการกระทำ ไม่ใช่ความคิด',
+  'รู้ว่า "เสร็จ" หน้าตาเป็นอย่างไรก่อนลงแรง',
+  'ถามคนที่ช่วยได้ก่อนจะติดจริง',
+  'คิดไว้ก่อนว่าแผนจะพังตรงไหน',
+  'แผนพังได้ เปลี่ยนทาง ไม่เปลี่ยนเป้า',
+  'ตอบผู้สั่งงานได้ทุกเมื่อว่าถึงไหนแล้ว',
+  'ปิดงานพร้อมบอกคนที่สั่ง',
+  'ทบทวนทุกวัน ดูหลักฐาน ไม่ใช่ความรู้สึก',
+]
+
+export function Rules() {
+  return (
+    <div className="stack">
+      <h1>กฎ 9 ข้อของ The Fixer</h1>
+      <ol className="rules">
+        {rules.map((r) => (
+          <li key={r}>{r}</li>
+        ))}
+      </ol>
     </div>
   )
 }

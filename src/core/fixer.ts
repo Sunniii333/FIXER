@@ -296,6 +296,11 @@ export class Fixer {
     return this.data.settings
   }
 
+  async updateSettings(patch: Partial<Omit<Settings, 'lastExportAt'>>) {
+    Object.assign(this.data.settings, patch)
+    await this.save()
+  }
+
   /** The whole store as a versioned JSON file. Records lastExportAt. */
   async exportData() {
     this.data.settings.lastExportAt = this.clock.now()
