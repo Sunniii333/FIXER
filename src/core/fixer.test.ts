@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { Fixer } from './fixer'
+import { Fixer, flags } from './fixer'
 import { fakeClock, memoryStorage } from './fakes'
 
 const MIN = 60_000
+const DAY = 24 * 60 * MIN
 const T0 = new Date(2026, 8, 1, 10, 0).getTime() // 1 Sep 2026 10:00 local
 
 async function setup(start = T0) {
@@ -107,6 +108,32 @@ describe('Five-minute clock and First-step tap', () => {
     expect(fixer.onTimeStart('m1')).toBeUndefined()
     clock.advance(1 * MIN + 1)
     expect(fixer.onTimeStart('m1')).toBe(false)
+  })
+})
+
+describe('filling in a Mission later', () => {
+  it('records every Done-definition edit in History', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer)
+    clock.advance(MIN)
+    await fixer.edit('m1', { doneDefinition: 'ส่งไฟล์ให้หัวหน้า', risk: 'ข้อมูลไม่ครบ' })
+    clock.advance(MIN)
+    await fixer.edit('m1', { doneDefinition: 'ส่งไฟล์และนำเสนอ' })
+    await fixer.edit('m1', { doneDefinition: 'ส่งไฟล์และนำเสนอ' }) // unchanged: nothing recorded
+    expect(fixer.mission('m1')!.history).toEqual([
+      { at: T0 + MIN, field: 'doneDefinition', oldValue: undefined },
+      { at: T0 + 2 * MIN, field: 'doneDefinition', oldValue: 'ส่งไฟล์ให้หัวหน้า' },
+    ])
+  })
+
+  it('flags an active Mission with no Done definition, and a deadline with no date', async () => {
+    const { fixer } = await setup()
+    await activeMission(fixer)
+    await fixer.edit('m1', { deadlineText: 'ก่อนประชุมวันพฤหัส' })
+    const m = () => fixer.mission('m1')!
+    expect(flags(m())).toEqual({ goalUnclear: true, noDate: true })
+    await fixer.edit('m1', { doneDefinition: 'x', deadlineAt: T0 + 3 * DAY })
+    expect(flags(m())).toEqual({ goalUnclear: false, noDate: false })
   })
 })
 

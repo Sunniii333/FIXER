@@ -112,6 +112,8 @@ export class Fixer {
       if (m.status !== 'draft') throw new Error('First step is fixed once active')
       m.steps = [{ id: `${id}-s0`, text: firstStep, startedAt: m.createdAt }]
     }
+    if ('doneDefinition' in fields && fields.doneDefinition !== m.doneDefinition)
+      m.history.push({ at: this.clock.now(), field: 'doneDefinition', oldValue: m.doneDefinition })
     Object.assign(m, fields)
     await this.save()
   }
@@ -171,6 +173,14 @@ const FIVE_MIN = 5 * 60_000
 export function currentStep(m: Mission): Step | undefined {
   const last = m.steps.at(-1)
   return m.status === 'active' && last && !last.outcome ? last : undefined
+}
+
+/** "เป้ายังไม่ชัด" and "ไม่มีวันกำหนด" */
+export function flags(m: Mission) {
+  return {
+    goalUnclear: m.status === 'active' && !m.doneDefinition?.trim(),
+    noDate: !!m.deadlineText?.trim() && m.deadlineAt === undefined,
+  }
 }
 
 function onTime(m: Mission, now: number): boolean | undefined {

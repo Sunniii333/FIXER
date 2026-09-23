@@ -162,3 +162,11 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-
 .step.done > span { text-decoration: line-through; text-decoration-thickness: 2px; }
 .step.abandoned > span { text-decoration: line-through wavy var(--danger); color: var(--muted); }
 .step.current > span { font-weight: 700; }
+.tags:empty { display: none; }
+.tags { flex: none; }
+.tags > * { flex: none; }
+.facts { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.facts:empty { display: none; }
+.facts > div { border-left: 4px solid var(--brown); padding-left: 10px; }
+.facts dt { font-size: .8rem; font-weight: 700; color: var(--muted); }
+.facts dd { margin: 0; white-space: pre-wrap; }

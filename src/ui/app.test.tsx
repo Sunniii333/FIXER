@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import { render } from 'vitest-browser-react'
 import { App } from './App'
 import { fakePorts } from './test-ports'
+import { quickCapture } from './helpers'
 
 it('quick capture: receive → Instruction + First step → shows on home, survives reload', async () => {
   const ports = fakePorts()
@@ -19,13 +20,6 @@ it('quick capture: receive → Instruction + First step → shows on home, survi
   const again = await render(<App ports={ports} />)
   await expect.element(again.getByText('ทำรายงานยอดขาย Q3')).toBeVisible()
 })
-
-async function quickCapture(screen: Awaited<ReturnType<typeof render>>, instruction = 'ทำรายงาน', first = 'เปิดไฟล์') {
-  await screen.getByRole('button', { name: 'รับภารกิจ' }).click()
-  await screen.getByLabelText('คำสั่งงาน').fill(instruction)
-  await screen.getByLabelText('ก้าวแรก').fill(first)
-  await screen.getByRole('button', { name: 'เริ่มลงมือ' }).click()
-}
 
 it('first-step tap: countdown from receipt, tap records the start, then the next Step is named', async () => {
   const ports = fakePorts()
