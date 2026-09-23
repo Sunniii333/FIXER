@@ -201,3 +201,8 @@ p.tag { margin: 0; font-size: .9rem; }
 .stats dt { font-size: .75rem; font-weight: 700; }
 .stats dd { margin: 0; font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
 .stats small { font-size: .75rem; }
+.segmented { display: flex; border: 3px solid var(--line); border-radius: 6px; overflow: hidden; box-shadow: var(--shadow); }
+.segmented button { flex: 1; border: none; border-radius: 0; box-shadow: none; padding: 8px 4px; font-size: .9rem; }
+.segmented button + button { border-left: 3px solid var(--line); }
+.segmented button[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); }
+section h2 { font-size: 1rem; }

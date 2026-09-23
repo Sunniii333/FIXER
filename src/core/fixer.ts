@@ -292,6 +292,33 @@ export class Fixer {
     }
   }
 
+  /** The Review screen, for Missions received within [from, to]. */
+  review({ from, to }: { from: number; to: number }) {
+    const now = this.clock.now()
+    const ms = this.data.missions.filter((m) => m.createdAt >= from && m.createdAt <= to)
+    const open = ms.filter((m) => m.status === 'draft' || m.status === 'active')
+    const replansByReason: Partial<Record<ReplanReason, number>> = {}
+    for (const r of ms.flatMap((m) => m.replans)) replansByReason[r.reason] = (replansByReason[r.reason] ?? 0) + 1
+    const missedByMonth: Record<string, number> = {}
+    for (const m of ms) {
+      const missed =
+        m.deadlineAt !== undefined && (m.status === 'done' ? m.doneAt! > m.deadlineAt : overdue(m, now))
+      if (missed) missedByMonth[monthKey(m.createdAt)] = (missedByMonth[monthKey(m.createdAt)] ?? 0) + 1
+    }
+    return {
+      open,
+      overdue: open.filter((m) => overdue(m, now)),
+      staleDrafts: open.filter((m) => m.status === 'draft' && now - m.createdAt > DAY), // "ร่างค้าง"
+      goalUnclear: ms.filter((m) => flags(m).goalUnclear),
+      oftenReplanned: ms.filter((m) => m.replans.length >= OFTEN_REPLANNED).sort((a, b) => b.replans.length - a.replans.length),
+      replansByReason,
+      // a real change of goal: replacing a Done definition that was already there
+      doneDefinitionChanged: ms.filter((m) => m.history.some((h) => h.field === 'doneDefinition' && h.oldValue)).length,
+      textOnlyExcluded: ms.filter((m) => flags(m).noDate).length,
+      missedByMonth,
+    }
+  }
+
   /** Ready-to-send Thai sentence for the Assigner; four fixed templates by state. */
   statusSentence(id: string): string | undefined {
     const m = this.get(id)
@@ -352,6 +379,8 @@ export class Fixer {
 
 const FIVE_MIN = 5 * 60_000
 export const UNDO_MS = 5000
+const DAY = 24 * 60 * 60_000
+const OFTEN_REPLANNED = 2
 
 export function currentStep(m: Mission): Step | undefined {
   const last = m.steps.at(-1)

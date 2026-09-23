@@ -338,6 +338,63 @@ describe('home list and stats', () => {
   })
 })
 
+describe('Review', () => {
+  it('lists open, overdue, stale Drafts and unclear goals, and groups Replans by reason, within the date range', async () => {
+    const { fixer, clock } = await setup()
+    clock.set(T0 - 10 * DAY)
+    await activeMission(fixer, 'old') // outside a 7-day range
+    clock.set(T0)
+    await fixer.receive('stale')
+    clock.advance(MIN)
+    await activeMission(fixer, 'late')
+    await fixer.edit('late', { doneDefinition: 'x', deadlineAt: T0 + DAY })
+    await activeMission(fixer, 'bumpy')
+    await fixer.edit('bumpy', { doneDefinition: 'เดิม' })
+    await fixer.edit('bumpy', { doneDefinition: 'ใหม่' })
+    await fixer.replan('bumpy', { reason: 'waiting', step: 'a' })
+    await fixer.replan('bumpy', { reason: 'waiting', step: 'b' })
+    await fixer.replan('bumpy', { reason: 'scope', step: 'c' })
+    await activeMission(fixer, 'textOnly')
+    await fixer.edit('textOnly', { doneDefinition: 'x', deadlineText: 'สิ้นเดือน' })
+    clock.advance(2 * DAY)
+    await fixer.receive('fresh')
+
+    const ids = (ms: { id: string }[]) => ms.map((m) => m.id).sort()
+    const r = fixer.review({ from: T0 - 7 * DAY, to: clock.now() })
+    expect(ids(r.open)).toEqual(['bumpy', 'fresh', 'late', 'stale', 'textOnly'])
+    expect(ids(r.overdue)).toEqual(['late'])
+    expect(ids(r.staleDrafts)).toEqual(['stale'])
+    expect(ids(r.goalUnclear)).toEqual([])
+    expect(ids(r.oftenReplanned)).toEqual(['bumpy'])
+    expect(r.replansByReason).toEqual({ waiting: 2, scope: 1 })
+    expect(r.doneDefinitionChanged).toBe(1)
+    expect(r.textOnlyExcluded).toBe(1)
+
+    const all = fixer.review({ from: 0, to: clock.now() })
+    expect(ids(all.goalUnclear)).toEqual(['old'])
+  })
+
+  it('counts Missed deadlines per month received: closed after deadlineAt, or open past it', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer, 'closedLate')
+    await fixer.edit('closedLate', { deadlineAt: T0 + DAY })
+    await activeMission(fixer, 'closedOnTime')
+    await fixer.edit('closedOnTime', { deadlineAt: T0 + DAY })
+    await fixer.close('closedOnTime')
+    await activeMission(fixer, 'openLate')
+    await fixer.edit('openLate', { deadlineAt: T0 + DAY })
+    await activeMission(fixer, 'droppedLate')
+    await fixer.edit('droppedLate', { deadlineAt: T0 + DAY })
+    await activeMission(fixer, 'textOnly')
+    await fixer.edit('textOnly', { deadlineText: 'เร็วๆ นี้' })
+    clock.advance(2 * DAY)
+    await fixer.close('closedLate')
+    await fixer.drop('droppedLate', 'ยกเลิก')
+
+    expect(fixer.review({ from: 0, to: clock.now() }).missedByMonth).toEqual({ '2026-09': 2 })
+  })
+})
+
 describe('People', () => {
   it('adds, edits and removes People, persisted; roles belong to each Mission', async () => {
     const { fixer, reload } = await setup()

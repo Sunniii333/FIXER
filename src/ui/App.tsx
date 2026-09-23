@@ -6,6 +6,7 @@ import { Fixer, UNDO_MS, type Clock, type Mission, type Storage } from '../core/
 import { MissionPage } from './MissionPage'
 import { EditForm, Walkthrough } from './EditMission'
 import { People } from './People'
+import { Review } from './Review'
 
 /** Share: the native share sheet where there is one, else the clipboard. */
 export type Share = { share(text: string): Promise<'shared' | 'copied'> }
@@ -78,6 +79,8 @@ export function App({ ports }: { ports: Ports }) {
       <main className="screen">
         {screen === 'people' ? (
           <People ui={ui} />
+        ) : screen === 'review' ? (
+          <Review ui={ui} />
         ) : screen === 'receive' ? (
           <Receive ui={ui} captureId={param} />
         ) : !fixer.mission(param) ? (
@@ -109,6 +112,7 @@ export function App({ ports }: { ports: Ports }) {
         {[
           ['', 'หน้าหลัก'],
           ['people', 'คน'],
+          ['review', 'ทบทวน'],
         ].map(([path, label]) => (
           <button key={path} aria-current={(screen || '') === path ? 'page' : undefined} onClick={() => go(path)}>
             {label}
