@@ -3,7 +3,7 @@
 // Mission data is loaded from the Storage port in the browser, never from the server.
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { Fixer, UNDO_MS, type Clock, type Mission, type ReminderKind, type Storage } from '../core/fixer'
-import { MissionPage } from './MissionPage'
+import { MissionPage, mmss } from './MissionPage'
 import { EditForm, Walkthrough } from './EditMission'
 import { People } from './People'
 import { Review } from './Review'
@@ -281,6 +281,9 @@ function Receive({ ui, captureId }: { ui: Ui; captureId: string }) {
       }}
     >
       <h1>รับภารกิจ</h1>
+      <p className="clock small" aria-label="เวลาที่เหลือของห้านาที">
+        {mmss(fixer.countdown(m.id)!)}
+      </p>
       <label>
         คำสั่งงาน
         <textarea
@@ -304,6 +307,16 @@ function Receive({ ui, captureId }: { ui: Ui; captureId: string }) {
         </button>
         <button className="primary big" disabled={!ready}>
           เริ่มลงมือ
+        </button>
+        <button
+          type="button"
+          className="link"
+          onClick={async () => {
+            await ui.run(() => fixer.delete(m.id))
+            ui.deleted()
+          }}
+        >
+          ลบร่างนี้ (รับผิด)
         </button>
       </div>
     </form>

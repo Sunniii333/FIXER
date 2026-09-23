@@ -232,3 +232,4 @@ input[type='file'] { padding: 8px; }
 .sheet h2, .sheet p { margin: 0; }
 .how { margin: 0; padding-left: 1.4rem; }
 .notice { margin-bottom: 12px; padding: 10px 12px; background: var(--surface-2); border: 3px solid var(--line); border-left: 10px solid var(--danger); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.clock.small { font-size: 1.6rem; padding: 2px 12px; }

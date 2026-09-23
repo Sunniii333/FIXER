@@ -267,6 +267,13 @@ describe('Status sentence', () => {
     expect(fixer.statusSentence('m1')).toBe('พี่เอครับ เรื่อง “ทำรายงานยอดขาย” เสร็จเรียบร้อยแล้วครับ')
   })
 
+  it('never reports a finished Step as the current one while the next is still unnamed', async () => {
+    const { fixer } = await setup()
+    await activeMission(fixer, 'm1', 'เปิดไฟล์')
+    await fixer.completeStep('m1')
+    expect(fixer.statusSentence('m1')).toBe('เรื่อง “งาน m1” กำลังดำเนินการอยู่ครับ เพิ่งทำ “เปิดไฟล์” เสร็จครับ')
+  })
+
   it('uses the note of an "other" Replan as its reason, and has nothing to say for a Dropped Mission', async () => {
     const { fixer } = await setup()
     await activeMission(fixer)
@@ -530,6 +537,15 @@ describe('pendingReminders', () => {
     clock.advance(DAY)
     await fixer.exportData()
     expect(kinds(fixer, 'backup')).toEqual([{ kind: 'backup', at: T0 + 8 * DAY }])
+  })
+
+  it('keeps nudging daily at reviewTime once the last export is more than seven days old', async () => {
+    const { fixer, clock } = await setup()
+    await fixer.receive('d')
+    clock.advance(9 * DAY) // 10 Sep 10:00, never exported
+    const nudges = kinds(fixer, 'backup')
+    expect(nudges[0]).toEqual({ kind: 'backup', at: new Date(2026, 8, 10, 20, 0).getTime() })
+    expect(nudges[1]).toEqual({ kind: 'backup', at: new Date(2026, 8, 11, 20, 0).getTime() })
   })
 })
 

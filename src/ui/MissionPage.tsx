@@ -6,7 +6,7 @@ import { helpText } from './People'
 export const clockTime = (ms: number) =>
   new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
 
-function mmss(ms: number) {
+export function mmss(ms: number) {
   const s = Math.ceil(ms / 1000)
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
@@ -110,7 +110,10 @@ export function MissionPage({ ui, id }: { ui: Ui; id: string }) {
         ) : m.status === 'done' ? (
           <button onClick={() => setMode('reopen')}>เปิดงานอีกครั้ง</button>
         ) : !current ? null : !current.text.trim() ? (
-          <NameStep key={current.id} onSave={(text) => ui.run(() => fixer.editStep(id, current.id, text))} />
+          <>
+            <NameStep key={current.id} onSave={(text) => ui.run(() => fixer.editStep(id, current.id, text))} />
+            <button onClick={() => ui.run(() => fixer.close(id))}>ปิดงาน (ไม่มีก้าวต่อไป)</button>
+          </>
         ) : (
           <>
             <button className="primary big" onClick={() => ui.run(() => fixer.completeStep(id))}>

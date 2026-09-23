@@ -91,3 +91,22 @@ it('shares the Status sentence, and closing offers the done-sentence', async () 
   await screen.getByRole('button', { name: 'บอกผู้สั่งงานว่าเสร็จแล้ว' }).click()
   await expect.poll(() => ports.shared.at(-1)).toBe('เรื่อง “ทำรายงาน” เสร็จเรียบร้อยแล้วครับ')
 })
+
+it('a Draft shows its countdown and can be deleted with undo', async () => {
+  const ports = fakePorts()
+  const screen = await render(<App ports={ports} />)
+  await screen.getByRole('button', { name: 'รับภารกิจ' }).click()
+  ports.clock.advance(60_000)
+  await expect.element(screen.getByText('4:00')).toBeVisible()
+  await screen.getByRole('button', { name: 'ลบร่างนี้ (รับผิด)' }).click()
+  await expect.element(screen.getByRole('button', { name: 'เลิกทำ' })).toBeVisible()
+  await expect.element(screen.getByText('ร่าง', { exact: true })).not.toBeInTheDocument()
+})
+
+it('closing is offered while the next Step is still unnamed', async () => {
+  const screen = await render(<App ports={fakePorts()} />)
+  await quickCapture(screen)
+  await screen.getByRole('button', { name: 'ทำก้าวแรกแล้ว' }).click()
+  await screen.getByRole('button', { name: 'ปิดงาน (ไม่มีก้าวต่อไป)' }).click()
+  await expect.element(screen.getByRole('button', { name: 'เปิดงานอีกครั้ง' })).toBeVisible()
+})

@@ -323,7 +323,9 @@ export class Fixer {
     for (const [at, count] of perDate) all.push({ kind: 'deadline', at, count })
     if (this.data.missions.length) {
       const since = lastExportAt ?? Math.min(...this.data.missions.map((m) => m.createdAt))
-      all.push({ kind: 'backup', at: since + 7 * DAY })
+      if (since + 7 * DAY > now) all.push({ kind: 'backup', at: since + 7 * DAY })
+      // already overdue: nudge daily with the evening Review until the next export
+      else for (let d = 0; d < 8; d++) all.push({ kind: 'backup', at: atTime(now, d, reviewTime) })
     }
     return all.filter((r) => r.at > now).sort((a, b) => a.at - b.at)
   }
@@ -415,6 +417,9 @@ export class Fixer {
     const m = this.get(id)
     const what = `เรื่อง “${m.instruction}”`
     const step = m.steps.findLast((s) => s.text.trim())?.text
+    // right after finishing a Step the next one may still be unnamed: say what was just done
+    const named = currentStep(m)?.text.trim()
+    const now = (doing: string) => (named ? `${doing} “${step}” ครับ` : `เพิ่งทำ “${step}” เสร็จครับ`)
     const replan = m.replans.at(-1)
     if (m.status === 'dropped') return undefined
     if (m.status === 'done') {
@@ -423,9 +428,9 @@ export class Fixer {
     }
     if (replan) {
       const why = replan.reason === 'other' && replan.note ? replan.note : replanReasonLabels[replan.reason]
-      return `${what} ต้องปรับแผนเพราะ${why}ครับ ตอนนี้เปลี่ยนมาทำ “${step}” ครับ`
+      return `${what} ต้องปรับแผนเพราะ${why}ครับ ${now('ตอนนี้เปลี่ยนมาทำ')}`
     }
-    if (m.steps[0]?.outcome === 'done') return `${what} กำลังดำเนินการอยู่ครับ ตอนนี้กำลังทำ “${step}” ครับ`
+    if (m.steps[0]?.outcome === 'done') return `${what} กำลังดำเนินการอยู่ครับ ${now('ตอนนี้กำลังทำ')}`
     return `ได้รับ${what} แล้วครับ ${step ? `กำลังเริ่มจาก “${step}” ครับ` : 'กำลังวางก้าวแรกอยู่ครับ'}`
   }
 
