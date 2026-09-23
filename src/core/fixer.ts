@@ -14,6 +14,17 @@ export type Step = {
   outcome?: 'done' | 'abandoned'
 }
 
+export const replanReasons = ['waiting', 'access', 'scope', 'underestimated', 'other'] as const
+export type ReplanReason = (typeof replanReasons)[number]
+export const replanReasonLabels: Record<ReplanReason, string> = {
+  waiting: 'รอคนอื่นอยู่',
+  access: 'ขาดสิทธิ์หรือข้อมูล',
+  scope: 'ขอบเขตงานเปลี่ยน',
+  underestimated: 'ประเมินงานต่ำไป',
+  other: 'เหตุอื่น',
+}
+export type Replan = { at: number; reason: ReplanReason; note?: string; abandonedStepId: string; newStepId: string }
+
 export type HistoryEntry = { at: number; field: string; oldValue: unknown }
 
 export type Mission = {
@@ -33,7 +44,7 @@ export type Mission = {
   doneAt?: number
   droppedAt?: number
   steps: Step[]
-  replans: never[]
+  replans: Replan[]
   history: HistoryEntry[]
 }
 
@@ -154,6 +165,21 @@ export class Fixer {
     current.doneAt = now
     current.outcome = 'done'
     m.steps.push({ id: `${id}-s${m.steps.length}`, text: '', startedAt: now })
+    await this.save()
+  }
+
+  /** "แผนพัง": change the path, never the goal. */
+  async replan(id: string, { reason, note, step }: { reason: ReplanReason; note?: string; step: string }) {
+    const m = this.get(id)
+    const current = currentStep(m)
+    if (!current) throw new Error('Not active')
+    if (!replanReasons.includes(reason)) throw new Error(`Unknown reason ${reason}`)
+    if (!step.trim()) throw new Error('Name the new Step')
+    const at = this.clock.now()
+    current.outcome = 'abandoned'
+    const next = { id: `${id}-s${m.steps.length}`, text: step.trim(), startedAt: at }
+    m.steps.push(next)
+    m.replans.push({ at, reason, ...(note?.trim() && { note: note.trim() }), abandonedStepId: current.id, newStepId: next.id })
     await this.save()
   }
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { currentStep, flags, type Mission, type Step } from '../core/fixer'
+import { currentStep, flags, replanReasonLabels, replanReasons, type Mission, type ReplanReason, type Step } from '../core/fixer'
 import type { Ui } from './App'
 import { helpText } from './People'
 
@@ -20,6 +20,7 @@ export function MissionPage({ ui, id }: { ui: Ui; id: string }) {
   const firstStepPending = !m.steps[0]?.outcome
   const f = flags(m)
   const assigner = fixer.person(m.assignerId)
+  const [replanning, setReplanning] = useState(false)
   return (
     <div className="stack">
       <h1>{m.instruction}</h1>
@@ -37,6 +38,7 @@ export function MissionPage({ ui, id }: { ui: Ui; id: string }) {
       </div>
       {assigner && <p className="muted">สั่งโดย {assigner.name}</p>}
       <Facts m={m} />
+      <Replans m={m} />
       <Helpers ui={ui} id={id} />
 
       <ol className="steps">
@@ -52,16 +54,76 @@ export function MissionPage({ ui, id }: { ui: Ui; id: string }) {
 
       {current && (
         <div className="actions">
-          {!current.text.trim() ? (
+          {replanning ? (
+            <ReplanForm ui={ui} m={m} done={() => setReplanning(false)} />
+          ) : !current.text.trim() ? (
             <NameStep key={current.id} onSave={(text) => ui.run(() => fixer.editStep(id, current.id, text))} />
           ) : (
-            <button className="primary big" onClick={() => ui.run(() => fixer.completeStep(id))}>
-              {firstStepPending ? 'ทำก้าวแรกแล้ว' : 'เสร็จก้าวนี้'}
-            </button>
+            <>
+              <button className="primary big" onClick={() => ui.run(() => fixer.completeStep(id))}>
+                {firstStepPending ? 'ทำก้าวแรกแล้ว' : 'เสร็จก้าวนี้'}
+              </button>
+              <button className="danger" onClick={() => setReplanning(true)}>
+                แผนพัง
+              </button>
+            </>
           )}
         </div>
       )}
     </div>
+  )
+}
+
+function Replans({ m }: { m: Mission }) {
+  if (m.replans.length === 0) return null
+  const reasons = m.replans.map((r) => replanReasonLabels[r.reason] + (r.note ? ` (${r.note})` : ''))
+  return <p className="tag warn">{`แผนพัง ${m.replans.length} ครั้ง: ${reasons.join(', ')}`}</p>
+}
+
+function ReplanForm({ ui, m, done }: { ui: Ui; m: Mission; done: () => void }) {
+  const [reason, setReason] = useState<ReplanReason>()
+  const [note, setNote] = useState('')
+  const [step, setStep] = useState('')
+  return (
+    <form
+      className="stack"
+      onSubmit={async (e) => {
+        e.preventDefault()
+        if (!reason || !step.trim()) return
+        await ui.run(() => ui.fixer.replan(m.id, { reason, note, step }))
+        done()
+      }}
+    >
+      <h2>แผนพัง — เปลี่ยนทาง ไม่เปลี่ยนเป้า</h2>
+      <div className="planb">
+        <strong>Plan B:</strong> {m.planB?.trim() || <span className="muted">ยังไม่ได้เขียน Plan B</span>}
+      </div>
+      <fieldset className="checks">
+        <legend>พังเพราะอะไร</legend>
+        {replanReasons.map((r) => (
+          <label key={r} className="check">
+            <input type="radio" name="reason" checked={reason === r} onChange={() => setReason(r)} />
+            {replanReasonLabels[r]}
+          </label>
+        ))}
+      </fieldset>
+      <label>
+        รายละเอียด (ไม่ใส่ก็ได้)
+        <input value={note} onChange={(e) => setNote(e.target.value)} />
+      </label>
+      <label>
+        ก้าวใหม่คืออะไร?
+        <input value={step} onChange={(e) => setStep(e.target.value)} />
+      </label>
+      <div className="row">
+        <button type="button" onClick={done}>
+          ยกเลิก
+        </button>
+        <button className="primary" disabled={!reason || !step.trim()}>
+          เปลี่ยนแผน
+        </button>
+      </div>
+    </form>
   )
 }
 

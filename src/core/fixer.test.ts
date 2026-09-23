@@ -137,6 +137,36 @@ describe('filling in a Mission later', () => {
   })
 })
 
+describe('Replan', () => {
+  it('abandons the current Step, adds a new current Step and leaves the Done definition alone', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer, 'm1', 'ขอไฟล์จากบัญชี')
+    await fixer.edit('m1', { doneDefinition: 'ส่งรายงาน', planB: 'ใช้ตัวเลขเดือนก่อน' })
+    clock.advance(10 * MIN)
+    await fixer.replan('m1', { reason: 'waiting', note: 'บัญชีลา', step: 'ใช้ตัวเลขเดือนก่อน' })
+
+    const m = fixer.mission('m1')!
+    expect(m.doneDefinition).toBe('ส่งรายงาน')
+    expect(m.steps).toEqual([
+      expect.objectContaining({ id: 'm1-s0', text: 'ขอไฟล์จากบัญชี', outcome: 'abandoned' }),
+      { id: 'm1-s1', text: 'ใช้ตัวเลขเดือนก่อน', startedAt: T0 + 10 * MIN },
+    ])
+    expect(m.replans).toEqual([
+      { at: T0 + 10 * MIN, reason: 'waiting', note: 'บัญชีลา', abandonedStepId: 'm1-s0', newStepId: 'm1-s1' },
+    ])
+    // the new Step is never a First step: the abandoned one stays first, and counts as a miss
+    expect(fixer.onTimeStart('m1')).toBe(false)
+  })
+
+  it('needs a reason from the fixed list and a new Step', async () => {
+    const { fixer } = await setup()
+    await activeMission(fixer)
+    await expect(fixer.replan('m1', { reason: 'bad' as never, step: 'x' })).rejects.toThrow()
+    await expect(fixer.replan('m1', { reason: 'other', step: ' ' })).rejects.toThrow()
+    expect(fixer.mission('m1')!.replans).toEqual([])
+  })
+})
+
 describe('People', () => {
   it('adds, edits and removes People, persisted; roles belong to each Mission', async () => {
     const { fixer, reload } = await setup()

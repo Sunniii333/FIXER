@@ -23,3 +23,22 @@ it('walkthrough: one question per screen, each skippable, flags update', async (
   await expect.element(screen.getByText('ไม่มีวันกำหนด')).toBeVisible()
   await expect.element(screen.getByText('เป้ายังไม่ชัด')).not.toBeInTheDocument()
 })
+
+it('แผนพัง: shows Plan B, asks for the new Step and a reason, and the Mission shows the Replan', async () => {
+  const screen = await render(<App ports={fakePorts()} />)
+  await quickCapture(screen, 'ทำรายงาน', 'ขอไฟล์จากบัญชี')
+  await screen.getByRole('button', { name: 'แก้ไข' }).click()
+  await screen.getByLabelText('ถ้าพัง จะทำอะไรแทน? (Plan B)').fill('ใช้ตัวเลขเดือนก่อน')
+  await screen.getByRole('button', { name: 'บันทึก' }).click()
+
+  await screen.getByRole('button', { name: 'แผนพัง' }).click()
+  await expect.element(screen.getByText('ใช้ตัวเลขเดือนก่อน')).toBeVisible()
+  await screen.getByLabelText('รอคนอื่นอยู่').click()
+  await screen.getByLabelText('ก้าวใหม่คืออะไร?').fill('ประมาณจากเดือนก่อน')
+  await screen.getByRole('button', { name: 'เปลี่ยนแผน' }).click()
+
+  await expect.element(screen.getByText('แผนพัง 1 ครั้ง: รอคนอื่นอยู่')).toBeVisible()
+  await expect.element(screen.getByText('ประมาณจากเดือนก่อน')).toBeVisible()
+  await expect.element(screen.getByText('แผนพัง — เลิกทางนี้')).toBeVisible()
+  await expect.element(screen.getByRole('button', { name: 'ทำก้าวแรกแล้ว' })).not.toBeInTheDocument()
+})
