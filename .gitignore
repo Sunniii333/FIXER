@@ -6,3 +6,7 @@ next-env.d.ts
 __screenshots__/
 *.tsbuildinfo
 .vitest/
+
+.vercel
+.env*
+!.env.example
