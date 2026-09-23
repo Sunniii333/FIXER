@@ -81,6 +81,13 @@ export function App({ ports }: { ports: Ports }) {
     ports.reminders.sync(JSON.parse(schedule)).catch(() => {})
   })
 
+  // A stuck notification is content-blind, so it can't name a Mission: open the one that went Stuck.
+  useEffect(() => {
+    if (!fixer || screen !== 'stuck') return
+    const stuck = fixer.homeList().find((m) => fixer.isStuck(m.id))
+    go(stuck ? `m/${stuck.id}` : '')
+  })
+
   if (!fixer) return null
   const ui: Ui = {
     fixer,

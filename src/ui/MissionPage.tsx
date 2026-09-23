@@ -39,6 +39,11 @@ export function MissionPage({ ui, id }: { ui: Ui; id: string }) {
       {assigner && <p className="muted">สั่งโดย {assigner.name}</p>}
       <Facts m={m} />
       <Replans m={m} />
+      {fixer.isStuck(id) && (
+        <p className="tag bad" role="status">
+          ก้าวนี้นานเกิน {fixer.settings().stuckAfter} นาทีแล้ว — ถามคนที่ช่วยได้ก่อนจะติดจริง
+        </p>
+      )}
       <Helpers ui={ui} id={id} />
 
       <ol className="steps">

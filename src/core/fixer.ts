@@ -304,10 +304,34 @@ export class Fixer {
   pendingReminders(): Reminder[] {
     const now = this.clock.now()
     const open = this.data.missions.filter((m) => m.status === 'draft' || m.status === 'active')
-    const all: Reminder[] = open
-      .filter((m) => !m.steps[0]?.outcome)
-      .map((m) => ({ kind: 'fiveMinute', at: m.createdAt + FIVE_MIN }))
+    const { stuckAfter, reviewTime, deadlineTime, lastExportAt } = this.data.settings
+    const all: Reminder[] = []
+    for (const m of open) {
+      if (!m.steps[0]?.outcome) all.push({ kind: 'fiveMinute', at: m.createdAt + FIVE_MIN })
+      const current = currentStep(m)
+      if (current) all.push({ kind: 'stuck', at: current.startedAt + stuckAfter * 60_000 })
+    }
+    // ponytail: a week of Review nudges ahead, so they keep coming while the app stays closed;
+    // the next open re-syncs the next week
+    if (open.length) for (let d = 0; d < 8; d++) all.push({ kind: 'review', at: atTime(now, d, reviewTime) })
+    const perDate = new Map<number, number>()
+    for (const m of open) {
+      if (m.deadlineAt === undefined) continue
+      const at = atTime(m.deadlineAt, 0, deadlineTime)
+      perDate.set(at, (perDate.get(at) ?? 0) + 1)
+    }
+    for (const [at, count] of perDate) all.push({ kind: 'deadline', at, count })
+    if (this.data.missions.length) {
+      const since = lastExportAt ?? Math.min(...this.data.missions.map((m) => m.createdAt))
+      all.push({ kind: 'backup', at: since + 7 * DAY })
+    }
     return all.filter((r) => r.at > now).sort((a, b) => a.at - b.at)
+  }
+
+  /** Stuck: the current Step has been current longer than stuckAfter. */
+  isStuck(id: string) {
+    const current = currentStep(this.get(id))
+    return !!current && this.clock.now() - current.startedAt > this.data.settings.stuckAfter * 60_000
   }
 
   settings(): Settings {
@@ -516,4 +540,11 @@ function isMission(x: unknown): x is Mission {
 
 function isPerson(x: unknown): x is Person {
   return isObj(x) && typeof x.id === 'string' && typeof x.name === 'string' && Array.isArray(x.canHelpWith)
+}
+
+/** Local time "HH:MM" on the day of `ms`, `days` later. */
+function atTime(ms: number, days: number, hhmm: string) {
+  const [h, min] = hhmm.split(':').map(Number)
+  const d = new Date(ms)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + days, h, min).getTime()
 }

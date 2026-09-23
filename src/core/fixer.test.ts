@@ -467,6 +467,70 @@ describe('pendingReminders', () => {
     clock.advance(5 * MIN)
     expect(kinds(fixer, 'fiveMinute')).toEqual([])
   })
+
+  it('has a stuck reminder at the current Step startedAt + stuckAfter, which moves with the Step', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer)
+    expect(kinds(fixer, 'stuck')).toEqual([{ kind: 'stuck', at: T0 + 30 * MIN }])
+    clock.advance(10 * MIN)
+    await fixer.completeStep('m1')
+    await fixer.updateSettings({ stuckAfter: 45 })
+    expect(kinds(fixer, 'stuck')).toEqual([{ kind: 'stuck', at: T0 + 55 * MIN }])
+    clock.advance(46 * MIN)
+    expect(kinds(fixer, 'stuck')).toEqual([])
+    expect(fixer.isStuck('m1')).toBe(true)
+    await fixer.close('m1')
+    expect(fixer.isStuck('m1')).toBe(false)
+  })
+
+  it('has a daily Review nudge at reviewTime only while Missions are open', async () => {
+    const { fixer } = await setup()
+    expect(kinds(fixer, 'review')).toEqual([])
+    await fixer.receive('d')
+    const nudges = kinds(fixer, 'review')
+    expect(nudges[0]).toEqual({ kind: 'review', at: new Date(2026, 8, 1, 20, 0).getTime() })
+    expect(nudges[1]).toEqual({ kind: 'review', at: new Date(2026, 8, 2, 20, 0).getTime() })
+    await fixer.drop('d', 'ไม่ต้องทำ')
+    expect(kinds(fixer, 'review')).toEqual([])
+  })
+
+  it('has one Deadline nudge per due date at deadlineTime, counting open Missions with a real date', async () => {
+    const { fixer, clock } = await setup()
+    const endOf = (d: number) => new Date(2026, 8, d, 23, 59, 59, 999).getTime()
+    await activeMission(fixer, 'a')
+    await fixer.edit('a', { deadlineAt: endOf(3) })
+    await fixer.receive('draft')
+    await fixer.edit('draft', { deadlineAt: endOf(3) })
+    await activeMission(fixer, 'b')
+    await fixer.edit('b', { deadlineAt: endOf(4) })
+    await activeMission(fixer, 'done')
+    await fixer.edit('done', { deadlineAt: endOf(4) })
+    await fixer.close('done')
+    await activeMission(fixer, 'textOnly')
+    await fixer.edit('textOnly', { deadlineText: 'วันศุกร์' })
+    await activeMission(fixer, 'today')
+    await fixer.edit('today', { deadlineAt: endOf(1) }) // 09:00 today has passed: skipped
+
+    expect(kinds(fixer, 'deadline')).toEqual([
+      { kind: 'deadline', at: new Date(2026, 8, 3, 9, 0).getTime(), count: 2 },
+      { kind: 'deadline', at: new Date(2026, 8, 4, 9, 0).getTime(), count: 1 },
+    ])
+    await fixer.updateSettings({ deadlineTime: '07:30' })
+    await fixer.edit('b', { deadlineAt: undefined })
+    expect(kinds(fixer, 'deadline')).toEqual([{ kind: 'deadline', at: new Date(2026, 8, 3, 7, 30).getTime(), count: 2 }])
+    clock.set(new Date(2026, 8, 3, 8, 0).getTime())
+    expect(kinds(fixer, 'deadline')).toEqual([])
+  })
+
+  it('has a backup nudge seven days after the last export, once there is a Mission', async () => {
+    const { fixer, clock } = await setup()
+    expect(kinds(fixer, 'backup')).toEqual([])
+    await fixer.receive('d')
+    expect(kinds(fixer, 'backup')).toEqual([{ kind: 'backup', at: T0 + 7 * DAY }])
+    clock.advance(DAY)
+    await fixer.exportData()
+    expect(kinds(fixer, 'backup')).toEqual([{ kind: 'backup', at: T0 + 8 * DAY }])
+  })
 })
 
 describe('Settings', () => {

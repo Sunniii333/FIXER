@@ -26,3 +26,33 @@ it('re-syncs when a Mission without a First step is deleted', async () => {
   await screen.getByRole('button', { name: 'ลบ (สร้างผิด)' }).click()
   await expect.poll(() => fiveMinute(ports)).toEqual([])
 })
+
+const last = (ports: ReturnType<typeof fakePorts>) => ports.synced.at(-1) ?? []
+
+it('re-syncs on a settings change, and turning reminders off clears the schedule', async () => {
+  const ports = fakePorts()
+  const screen = await render(<App ports={ports} />)
+  await quickCapture(screen)
+  await expect.poll(() => last(ports).find((e) => e.kind === 'review')?.dueAt).toBe(new Date(2026, 8, 1, 20, 0).getTime())
+
+  await screen.getByRole('button', { name: 'ตั้งค่า' }).click()
+  await screen.getByLabelText('เวลาเตือนทบทวนประจำวัน').fill('21:15')
+  await expect.poll(() => last(ports).find((e) => e.kind === 'review')?.dueAt).toBe(new Date(2026, 8, 1, 21, 15).getTime())
+  await screen.getByLabelText('เตือนว่าติดขัดเมื่อก้าวเดียวนานเกิน (นาที)').fill('60')
+  await expect.poll(() => last(ports).find((e) => e.kind === 'stuck')?.dueAt).toBe(T0 + 60 * MIN)
+
+  await screen.getByLabelText('เปิดการแจ้งเตือน').click()
+  await expect.poll(() => last(ports)).toEqual([])
+})
+
+it('opening a stuck notification shows the stuck Mission and offers the People list when it has no Helpers', async () => {
+  const ports = fakePorts()
+  const screen = await render(<App ports={ports} />)
+  await quickCapture(screen, 'งานที่ติด')
+  await screen.getByRole('button', { name: 'หน้าหลัก' }).click()
+  ports.clock.advance(31 * MIN)
+  location.hash = '#/stuck'
+  await expect.element(screen.getByRole('heading', { name: 'งานที่ติด' })).toBeVisible()
+  await expect.element(screen.getByText('ก้าวนี้นานเกิน 30 นาทีแล้ว', { exact: false })).toBeVisible()
+  await expect.element(screen.getByRole('button', { name: 'เลือกจากรายชื่อคน' })).toBeVisible()
+})
