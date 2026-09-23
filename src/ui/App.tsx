@@ -2,14 +2,21 @@
 // Every screen that touches Mission content lives under this client component.
 // Mission data is loaded from the Storage port in the browser, never from the server.
 import { useEffect, useReducer, useState } from 'react'
-import { Fixer, type Clock, type Mission, type Storage } from '../core/fixer'
+import { Fixer, UNDO_MS, type Clock, type Mission, type Storage } from '../core/fixer'
 import { MissionPage } from './MissionPage'
 import { EditForm, Walkthrough } from './EditMission'
 import { People } from './People'
 
 export type Ports = { clock: Clock; storage: Storage }
 
-export type Ui = { fixer: Fixer; ports: Ports; run: (fn: () => Promise<unknown>) => Promise<void>; go: (path: string) => void }
+export type Ui = {
+  fixer: Fixer
+  ports: Ports
+  run: (fn: () => Promise<unknown>) => Promise<void>
+  go: (path: string) => void
+  /** Call after a delete: goes home and offers undo for a few seconds. */
+  deleted: () => void
+}
 
 function useHashRoute() {
   const [hash, setHash] = useState(() => location.hash)
@@ -29,6 +36,12 @@ export function App({ ports }: { ports: Ports }) {
   const [fixer, setFixer] = useState<Fixer>()
   const [, rerender] = useReducer((n: number) => n + 1, 0)
   const [[screen, param], go] = useHashRoute()
+  const [undoable, setUndoable] = useState(false)
+  useEffect(() => {
+    if (!undoable) return
+    const t = setTimeout(() => setUndoable(false), UNDO_MS)
+    return () => clearTimeout(t)
+  }, [undoable])
 
   useEffect(() => {
     const t = setInterval(rerender, 500) // the Five-minute clock and Stuck are derived from the Clock
@@ -51,6 +64,10 @@ export function App({ ports }: { ports: Ports }) {
       rerender()
       return saved.then(rerender)
     },
+    deleted: () => {
+      setUndoable(true)
+      go('')
+    },
   }
 
   return (
@@ -72,6 +89,19 @@ export function App({ ports }: { ports: Ports }) {
           <Home ui={ui} />
         )}
       </main>
+      {undoable && (
+        <div className="toast" role="status">
+          ลบแล้ว
+          <button
+            onClick={async () => {
+              setUndoable(false)
+              await ui.run(() => fixer.undoDelete())
+            }}
+          >
+            เลิกทำ
+          </button>
+        </div>
+      )}
       <nav className="tabbar">
         {[
           ['', 'หน้าหลัก'],
@@ -88,8 +118,12 @@ export function App({ ports }: { ports: Ports }) {
 
 export const missionPath = (m: Mission) => (m.status === 'draft' ? `receive/${m.id}` : `m/${m.id}`)
 
+const statusLabel = { draft: 'ร่าง', active: 'กำลังทำ', done: 'เสร็จแล้ว', dropped: 'ยกเลิกแล้ว' }
+
 function Home({ ui }: { ui: Ui }) {
-  const missions = ui.fixer.missions()
+  const all = ui.fixer.missions()
+  const missions = all.filter((m) => m.status !== 'dropped')
+  const dropped = all.filter((m) => m.status === 'dropped')
   return (
     <>
       <h1>ภารกิจ</h1>
@@ -98,12 +132,29 @@ function Home({ ui }: { ui: Ui }) {
         {missions.map((m) => (
           <li key={m.id}>
             <a className="card" href={`#/${missionPath(m)}`}>
-              <span className="tag">{m.status === 'draft' ? 'ร่าง' : 'กำลังทำ'}</span>
+              <span className="tag">{statusLabel[m.status]}</span>
               <span>{m.instruction || '(ยังไม่มีคำสั่งงาน)'}</span>
             </a>
           </li>
         ))}
       </ul>
+      {dropped.length > 0 && (
+        <details className="history">
+          <summary>ยกเลิกแล้ว ({dropped.length})</summary>
+          <section aria-label="ยกเลิกแล้ว">
+            <ul className="list">
+              {dropped.map((m) => (
+                <li key={m.id}>
+                  <a className="card" href={`#/m/${m.id}`}>
+                    <span>{m.instruction}</span>
+                    <small className="muted">{m.dropReason}</small>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </details>
+      )}
       <div className="actions">
         <button className="primary big" onClick={() => ui.go(`receive/${crypto.randomUUID()}`)}>
           รับภารกิจ

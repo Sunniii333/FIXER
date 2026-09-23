@@ -20,7 +20,7 @@ export function MissionPage({ ui, id }: { ui: Ui; id: string }) {
   const firstStepPending = !m.steps[0]?.outcome
   const f = flags(m)
   const assigner = fixer.person(m.assignerId)
-  const [replanning, setReplanning] = useState(false)
+  const [mode, setMode] = useState<'replan' | 'drop' | 'reopen'>()
   return (
     <div className="stack">
       <h1>{m.instruction}</h1>
@@ -43,7 +43,14 @@ export function MissionPage({ ui, id }: { ui: Ui; id: string }) {
 
       <ol className="steps">
         {m.steps.map((s) => (
-          <StepItem key={s.id} ui={ui} missionId={id} step={s} isCurrent={s === current} />
+          <StepItem
+            key={s.id}
+            ui={ui}
+            missionId={id}
+            step={s}
+            isCurrent={s === current}
+            replanned={m.replans.some((r) => r.abandonedStepId === s.id)}
+          />
         ))}
       </ol>
 
@@ -52,24 +59,66 @@ export function MissionPage({ ui, id }: { ui: Ui; id: string }) {
         <button onClick={() => ui.go(`edit/${id}`)}>แก้ไข</button>
       </div>
 
-      {current && (
-        <div className="actions">
-          {replanning ? (
-            <ReplanForm ui={ui} m={m} done={() => setReplanning(false)} />
-          ) : !current.text.trim() ? (
-            <NameStep key={current.id} onSave={(text) => ui.run(() => fixer.editStep(id, current.id, text))} />
-          ) : (
-            <>
-              <button className="primary big" onClick={() => ui.run(() => fixer.completeStep(id))}>
-                {firstStepPending ? 'ทำก้าวแรกแล้ว' : 'เสร็จก้าวนี้'}
-              </button>
-              <button className="danger" onClick={() => setReplanning(true)}>
-                แผนพัง
-              </button>
-            </>
-          )}
+      {m.status === 'done' && <p className="tag">เสร็จแล้ว {dateLabel(m.doneAt!)} {clockTime(m.doneAt!)}</p>}
+      {m.status === 'dropped' && <p className="tag bad">ยกเลิกแล้ว: {m.dropReason}</p>}
+
+      {current && !mode && (
+        <div className="row">
+          <button className="link" onClick={() => setMode('drop')}>
+            ยกเลิกภารกิจ
+          </button>
+          <button
+            className="link"
+            onClick={async () => {
+              await ui.run(() => fixer.delete(id))
+              ui.deleted()
+            }}
+          >
+            ลบ (สร้างผิด)
+          </button>
         </div>
       )}
+
+      <div className="actions">
+        {mode === 'replan' ? (
+          <ReplanForm ui={ui} m={m} done={() => setMode(undefined)} />
+        ) : mode === 'drop' ? (
+          <NameStep
+            label="ทำไมถึงยกเลิก?"
+            button="ยืนยันยกเลิก"
+            onCancel={() => setMode(undefined)}
+            onSave={async (reason) => {
+              await ui.run(() => fixer.drop(id, reason))
+              setMode(undefined)
+            }}
+          />
+        ) : mode === 'reopen' ? (
+          <NameStep
+            button="เปิดงาน"
+            onCancel={() => setMode(undefined)}
+            onSave={async (step) => {
+              await ui.run(() => fixer.reopen(id, step))
+              setMode(undefined)
+            }}
+          />
+        ) : m.status === 'done' ? (
+          <button onClick={() => setMode('reopen')}>เปิดงานอีกครั้ง</button>
+        ) : !current ? null : !current.text.trim() ? (
+          <NameStep key={current.id} onSave={(text) => ui.run(() => fixer.editStep(id, current.id, text))} />
+        ) : (
+          <>
+            <button className="primary big" onClick={() => ui.run(() => fixer.completeStep(id))}>
+              {firstStepPending ? 'ทำก้าวแรกแล้ว' : 'เสร็จก้าวนี้'}
+            </button>
+            <div className="row">
+              <button className="danger" onClick={() => setMode('replan')}>
+                แผนพัง
+              </button>
+              <button onClick={() => ui.run(() => fixer.close(id))}>ปิดงาน</button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -132,8 +181,10 @@ export function NameStep({
   label = 'ก้าวต่อไปคืออะไร?',
   button = 'ตั้งก้าวนี้',
   initial = '',
+  onCancel,
 }: {
   onSave: (text: string) => unknown
+  onCancel?: () => void
   label?: string
   button?: string
   initial?: string
@@ -154,11 +205,28 @@ export function NameStep({
       <button className="primary big" disabled={!text.trim()}>
         {button}
       </button>
+      {onCancel && (
+        <button type="button" onClick={onCancel}>
+          ไม่ใช่ตอนนี้
+        </button>
+      )}
     </form>
   )
 }
 
-function StepItem({ ui, missionId, step, isCurrent }: { ui: Ui; missionId: string; step: Step; isCurrent: boolean }) {
+function StepItem({
+  ui,
+  missionId,
+  step,
+  isCurrent,
+  replanned,
+}: {
+  ui: Ui
+  missionId: string
+  step: Step
+  isCurrent: boolean
+  replanned: boolean
+}) {
   const [editing, setEditing] = useState(false)
   if (!step.text && isCurrent) return null
   return (
@@ -167,6 +235,7 @@ function StepItem({ ui, missionId, step, isCurrent }: { ui: Ui; missionId: strin
         <NameStep
           label="แก้ข้อความก้าวนี้"
           initial={step.text}
+          onCancel={() => setEditing(false)}
           button="บันทึก"
           onSave={async (text) => {
             await ui.run(() => ui.fixer.editStep(missionId, step.id, text))
@@ -178,7 +247,7 @@ function StepItem({ ui, missionId, step, isCurrent }: { ui: Ui; missionId: strin
           <span>{step.text}</span>
           <small className="muted">
             {step.outcome === 'done' && `เสร็จ ${clockTime(step.doneAt!)}`}
-            {step.outcome === 'abandoned' && 'แผนพัง — เลิกทางนี้'}
+            {step.outcome === 'abandoned' && (replanned ? 'แผนพัง — เลิกทางนี้' : 'ไม่ได้ทำ')}
             {isCurrent && `ก้าวปัจจุบัน ตั้งแต่ ${clockTime(step.startedAt)}`}
           </small>
           {step.outcome === 'done' && (

@@ -177,3 +177,19 @@ label.check input { width: 22px; height: 22px; accent-color: var(--accent); }
 .helpers { margin: 0; padding: 8px 12px; list-style: none; background: var(--surface-2); border: 3px solid var(--line); border-radius: 6px; }
 .planb { padding: 10px 12px; background: var(--surface-2); border: 3px dashed var(--line); border-radius: 6px; }
 p.tag { margin: 0; font-size: .9rem; }
+.toast {
+  position: sticky;
+  bottom: 56px;
+  margin: 0 16px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--ink);
+  color: var(--bg);
+  border: 3px solid var(--line);
+  border-radius: 6px;
+}
+.history { margin-top: 16px; }
+.history summary { font-weight: 700; cursor: pointer; padding: 8px 0; }

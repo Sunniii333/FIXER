@@ -183,6 +183,72 @@ export class Fixer {
     await this.save()
   }
 
+  /**
+   * Closes as done. The current Step is done too, except a First step never marked:
+   * that stays without a doneAt and is counted as a miss.
+   */
+  async close(id: string) {
+    const m = this.get(id)
+    const current = currentStep(m)
+    if (!current) throw new Error('Not active')
+    const now = this.clock.now()
+    this.endCurrentStep(m, current, current === m.steps[0] ? 'abandoned' : 'done')
+    m.status = 'done'
+    m.doneAt = now
+    await this.save()
+  }
+
+  async drop(id: string, reason: string) {
+    const m = this.get(id)
+    if (m.status !== 'draft' && m.status !== 'active') throw new Error('Already closed')
+    if (!reason.trim()) throw new Error('Say why')
+    const current = currentStep(m)
+    if (current) this.endCurrentStep(m, current, 'abandoned')
+    m.status = 'dropped'
+    m.dropReason = reason.trim()
+    m.droppedAt = this.clock.now()
+    await this.save()
+  }
+
+  private endCurrentStep(m: Mission, step: Step, outcome: 'done' | 'abandoned') {
+    if (!step.text.trim()) m.steps.pop() // an unnamed next Step was never a real Step
+    else if (outcome === 'done') Object.assign(step, { outcome, doneAt: this.clock.now() })
+    else step.outcome = outcome
+  }
+
+  /** Back to active with the original clock and result; the earlier doneAt goes to History. */
+  async reopen(id: string, step: string) {
+    const m = this.get(id)
+    if (m.status !== 'done') throw new Error('Only a done Mission can be reopened')
+    if (!step.trim()) throw new Error('Name the new current Step')
+    const now = this.clock.now()
+    m.history.push({ at: now, field: 'doneAt', oldValue: m.doneAt })
+    m.status = 'active'
+    delete m.doneAt
+    m.steps.push({ id: `${id}-s${m.steps.length}`, text: step.trim(), startedAt: now })
+    await this.save()
+  }
+
+  private deleted?: { mission: Mission; index: number; at: number }
+
+  /** For Missions created by mistake: gone, never counted, unless undone within UNDO_MS. */
+  async delete(id: string) {
+    const index = this.data.missions.findIndex((m) => m.id === id)
+    if (index < 0) return
+    this.deleted = { mission: this.data.missions[index], index, at: this.clock.now() }
+    this.data.missions.splice(index, 1)
+    await this.save()
+  }
+
+  async undoDelete() {
+    const d = this.deleted
+    this.deleted = undefined
+    if (!d || this.clock.now() - d.at > UNDO_MS) return false
+    this.data.missions.splice(d.index, 0, d.mission)
+    await this.save()
+    return true
+  }
+
   people(): Person[] {
     return this.data.people
   }
@@ -223,6 +289,7 @@ export class Fixer {
 }
 
 const FIVE_MIN = 5 * 60_000
+export const UNDO_MS = 5000
 
 export function currentStep(m: Mission): Step | undefined {
   const last = m.steps.at(-1)

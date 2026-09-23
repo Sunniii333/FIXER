@@ -167,6 +167,82 @@ describe('Replan', () => {
   })
 })
 
+describe('close, drop, reopen, delete', () => {
+  it('closes as done, marking the current Step done', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer)
+    await fixer.completeStep('m1')
+    await fixer.editStep('m1', 'm1-s1', 'ส่งไฟล์')
+    clock.advance(20 * MIN)
+    await fixer.close('m1')
+    const m = fixer.mission('m1')!
+    expect(m).toMatchObject({ status: 'done', doneAt: T0 + 20 * MIN })
+    expect(m.steps.map((s) => [s.outcome, s.doneAt])).toEqual([
+      ['done', T0],
+      ['done', T0 + 20 * MIN],
+    ])
+  })
+
+  it('closes without a First step as a miss, and reopening never changes that', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer)
+    clock.advance(MIN)
+    await fixer.close('m1')
+    expect(fixer.onTimeStart('m1')).toBe(false)
+    expect(fixer.mission('m1')!.steps[0].doneAt).toBeUndefined()
+
+    clock.advance(MIN)
+    await fixer.reopen('m1', 'ยังขาดกราฟ')
+    const m = fixer.mission('m1')!
+    expect(m).toMatchObject({ status: 'active', createdAt: T0 })
+    expect(m.doneAt).toBeUndefined()
+    expect(m.history).toContainEqual({ at: T0 + 2 * MIN, field: 'doneAt', oldValue: T0 + MIN })
+    expect(m.steps.at(-1)).toEqual({ id: 'm1-s1', text: 'ยังขาดกราฟ', startedAt: T0 + 2 * MIN })
+    expect(fixer.onTimeStart('m1')).toBe(false)
+  })
+
+  it('keeps an On-time start through reopen, and reopen needs a new Step', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer)
+    await fixer.completeStep('m1')
+    await fixer.close('m1')
+    await expect(fixer.reopen('m1', ' ')).rejects.toThrow()
+    clock.advance(DAY)
+    await fixer.reopen('m1', 'แก้ตามคอมเมนต์')
+    expect(fixer.onTimeStart('m1')).toBe(true)
+  })
+
+  it('drops a Draft or active Mission only with a reason', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer)
+    await expect(fixer.drop('m1', '  ')).rejects.toThrow()
+    clock.advance(MIN)
+    await fixer.drop('m1', 'ลูกค้ายกเลิก')
+    expect(fixer.mission('m1')).toMatchObject({ status: 'dropped', dropReason: 'ลูกค้ายกเลิก', droppedAt: T0 + MIN })
+    expect(fixer.onTimeStart('m1')).toBe(false)
+    await fixer.receive('d')
+    await fixer.drop('d', 'ซ้ำ')
+    expect(fixer.mission('d')!.status).toBe('dropped')
+  })
+
+  it('undoes a delete within a few seconds, and not after', async () => {
+    const { fixer, clock, reload } = await setup()
+    await activeMission(fixer, 'a')
+    await activeMission(fixer, 'b')
+    await fixer.delete('a')
+    expect(fixer.mission('a')).toBeUndefined()
+    clock.advance(4000)
+    await fixer.undoDelete()
+    expect(fixer.mission('a')).toBeDefined()
+
+    await fixer.delete('b')
+    clock.advance(6000)
+    await fixer.undoDelete()
+    expect(fixer.mission('b')).toBeUndefined()
+    expect((await reload()).missions().map((m) => m.id)).toEqual(['a'])
+  })
+})
+
 describe('People', () => {
   it('adds, edits and removes People, persisted; roles belong to each Mission', async () => {
     const { fixer, reload } = await setup()
