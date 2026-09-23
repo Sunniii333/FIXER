@@ -46,7 +46,8 @@ export type Settings = {
   theme: 'light' | 'dark'
 }
 
-export type Person = { id: string; name: string; canHelpWith: string[]; note?: string }
+export type HelpKind = 'info' | 'permission' | 'skill'
+export type Person = { id: string; name: string; canHelpWith: HelpKind[]; note?: string }
 
 export type Data = { missions: Mission[]; people: Person[]; settings: Settings }
 
@@ -142,7 +143,7 @@ export class Fixer {
 
   /**
    * Marks the current Step done at the tap time and opens the next Step, unnamed,
-   * which the owner names straight away (`nameStep`). A Step can't be completed until named.
+   * which the owner names straight away (`editStep`). A Step can't be completed until named.
    */
   async completeStep(id: string) {
     const m = this.get(id)
@@ -153,6 +154,33 @@ export class Fixer {
     current.doneAt = now
     current.outcome = 'done'
     m.steps.push({ id: `${id}-s${m.steps.length}`, text: '', startedAt: now })
+    await this.save()
+  }
+
+  people(): Person[] {
+    return this.data.people
+  }
+
+  person(id?: string): Person | undefined {
+    return this.data.people.find((p) => p.id === id)
+  }
+
+  /** A Mission's Helpers that still exist in the People list. */
+  helpers(id: string): Person[] {
+    return this.get(id).helperIds.flatMap((h) => this.person(h) ?? [])
+  }
+
+  /** Adds or replaces a Person by id. */
+  async savePerson(person: Person) {
+    const i = this.data.people.findIndex((p) => p.id === person.id)
+    if (i < 0) this.data.people.push(person)
+    else this.data.people[i] = person
+    await this.save()
+  }
+
+  /** Missions keep the id; they just stop showing a Person who no longer exists. */
+  async removePerson(id: string) {
+    this.data.people = this.data.people.filter((p) => p.id !== id)
     await this.save()
   }
 

@@ -137,6 +137,26 @@ describe('filling in a Mission later', () => {
   })
 })
 
+describe('People', () => {
+  it('adds, edits and removes People, persisted; roles belong to each Mission', async () => {
+    const { fixer, reload } = await setup()
+    await fixer.savePerson({ id: 'p1', name: 'พี่เอ', canHelpWith: ['permission'] })
+    await fixer.savePerson({ id: 'p2', name: 'บี', canHelpWith: ['info'] })
+    await fixer.savePerson({ id: 'p2', name: 'น้องบี', canHelpWith: ['info', 'skill'], note: 'ฝ่ายไอที' })
+    await activeMission(fixer, 'm1')
+    await activeMission(fixer, 'm2')
+    await fixer.edit('m1', { assignerId: 'p1', helperIds: ['p2'] })
+    await fixer.edit('m2', { assignerId: 'p2', helperIds: ['p1'] })
+    await fixer.removePerson('p1')
+
+    const again = await reload()
+    expect(again.people()).toEqual([{ id: 'p2', name: 'น้องบี', canHelpWith: ['info', 'skill'], note: 'ฝ่ายไอที' }])
+    expect(again.mission('m2')).toMatchObject({ assignerId: 'p2', helperIds: ['p1'] })
+    expect(again.helpers('m2')).toEqual([])
+    expect(again.helpers('m1').map((p) => p.name)).toEqual(['น้องบี'])
+  })
+})
+
 describe('the Step chain', () => {
   const current = (fixer: Fixer) => fixer.mission('m1')!.steps.filter((s) => !s.outcome)
 

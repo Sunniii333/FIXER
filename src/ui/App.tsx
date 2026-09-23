@@ -5,6 +5,7 @@ import { useEffect, useReducer, useState } from 'react'
 import { Fixer, type Clock, type Mission, type Storage } from '../core/fixer'
 import { MissionPage } from './MissionPage'
 import { EditForm, Walkthrough } from './EditMission'
+import { People } from './People'
 
 export type Ports = { clock: Clock; storage: Storage }
 
@@ -55,7 +56,9 @@ export function App({ ports }: { ports: Ports }) {
   return (
     <div className="app">
       <main className="screen">
-        {screen === 'receive' ? (
+        {screen === 'people' ? (
+          <People ui={ui} />
+        ) : screen === 'receive' ? (
           <Receive ui={ui} captureId={param} />
         ) : !fixer.mission(param) ? (
           <Home ui={ui} />
@@ -70,7 +73,14 @@ export function App({ ports }: { ports: Ports }) {
         )}
       </main>
       <nav className="tabbar">
-        <button onClick={() => go('')}>หน้าหลัก</button>
+        {[
+          ['', 'หน้าหลัก'],
+          ['people', 'คน'],
+        ].map(([path, label]) => (
+          <button key={path} aria-current={(screen || '') === path ? 'page' : undefined} onClick={() => go(path)}>
+            {label}
+          </button>
+        ))}
       </nav>
     </div>
   )

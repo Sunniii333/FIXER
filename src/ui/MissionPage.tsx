@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { currentStep, flags, type Mission, type Step } from '../core/fixer'
 import type { Ui } from './App'
+import { helpText } from './People'
 
 export const clockTime = (ms: number) =>
   new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
@@ -18,6 +19,7 @@ export function MissionPage({ ui, id }: { ui: Ui; id: string }) {
   const current = currentStep(m)
   const firstStepPending = !m.steps[0]?.outcome
   const f = flags(m)
+  const assigner = fixer.person(m.assignerId)
   return (
     <div className="stack">
       <h1>{m.instruction}</h1>
@@ -33,7 +35,9 @@ export function MissionPage({ ui, id }: { ui: Ui; id: string }) {
         {f.goalUnclear && <span className="tag warn">เป้ายังไม่ชัด</span>}
         {f.noDate && <span className="tag">ไม่มีวันกำหนด</span>}
       </div>
+      {assigner && <p className="muted">สั่งโดย {assigner.name}</p>}
       <Facts m={m} />
+      <Helpers ui={ui} id={id} />
 
       <ol className="steps">
         {m.steps.map((s) => (
@@ -148,5 +152,28 @@ function Facts({ m }: { m: Mission }) {
           </div>
         ))}
     </dl>
+  )
+}
+
+/** Who to ask before getting stuck. With no Helpers, offer the People list. */
+export function Helpers({ ui, id }: { ui: Ui; id: string }) {
+  const helpers = ui.fixer.helpers(id)
+  if (helpers.length === 0)
+    return (
+      <p className="muted">
+        ยังไม่ได้ระบุคนที่ช่วยได้ —{' '}
+        <button className="link" onClick={() => ui.go(`edit/${id}`)}>
+          เลือกจากรายชื่อคน
+        </button>
+      </p>
+    )
+  return (
+    <ul className="helpers" aria-label="คนที่ช่วยได้">
+      {helpers.map((p) => (
+        <li key={p.id}>
+          <strong>{p.name}</strong> <span className="muted">{helpText(p)}</span>
+        </li>
+      ))}
+    </ul>
   )
 }
