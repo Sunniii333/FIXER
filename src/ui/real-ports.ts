@@ -1,6 +1,7 @@
 // Real browser adapters. Thin by design; checked by hand, not by automated tests.
 import type { Data, Storage } from '../core/fixer'
 import type { Ports, ReminderSync, Share, SyncEntry } from './App'
+import type { Permission, Platform } from './Install'
 
 function idbStorage(): Storage {
   const db = new Promise<IDBDatabase>((resolve, reject) => {
@@ -67,6 +68,41 @@ function reminderSync(): ReminderSync {
   return reminders
 }
 
+type InstallPromptEvent = Event & { prompt(): Promise<void> }
+
+function platform(): Platform {
+  let deferred: InstallPromptEvent | undefined
+  addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault() // we show our own invite at the right moments
+    deferred = e as InstallPromptEvent
+  })
+  const supported = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window
+  const flag = (f: string) => `fixer.invite.${f}`
+  return {
+    ios: /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
+    standalone: matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true,
+    permission: (): Permission => (supported ? Notification.permission : 'unsupported'),
+    requestPermission: async (): Promise<Permission> => (supported ? Notification.requestPermission() : 'unsupported'),
+    canPrompt: () => !!deferred,
+    prompt: async () => {
+      await deferred?.prompt()
+      deferred = undefined
+    },
+    seen: (f) => {
+      try {
+        return localStorage.getItem(flag(f)) === '1'
+      } catch {
+        return false
+      }
+    },
+    markSeen: (f) => {
+      try {
+        localStorage.setItem(flag(f), '1')
+      } catch {}
+    },
+  }
+}
+
 export function realPorts(): Ports {
-  return { clock: Date, storage: idbStorage(), share, reminders: reminderSync() }
+  return { clock: Date, storage: idbStorage(), share, reminders: reminderSync(), platform: platform() }
 }

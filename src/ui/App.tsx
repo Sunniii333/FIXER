@@ -8,6 +8,7 @@ import { EditForm, Walkthrough } from './EditMission'
 import { People } from './People'
 import { Review } from './Review'
 import { Rules, Settings } from './Settings'
+import { InstallInvite, RemindersNotice, type InviteFlag, type Platform } from './Install'
 
 /** Share: the native share sheet where there is one, else the clipboard. */
 export type Share = { share(text: string): Promise<'shared' | 'copied'> }
@@ -16,7 +17,7 @@ export type Share = { share(text: string): Promise<'shared' | 'copied'> }
 export type SyncEntry = { dueAt: number; kind: ReminderKind; count?: number }
 export type ReminderSync = { sync(entries: SyncEntry[]): Promise<void> }
 
-export type Ports = { clock: Clock; storage: Storage; share: Share; reminders: ReminderSync }
+export type Ports = { clock: Clock; storage: Storage; share: Share; reminders: ReminderSync; platform: Platform }
 
 export type Ui = {
   fixer: Fixer
@@ -25,6 +26,9 @@ export type Ui = {
   go: (path: string) => void
   /** Call after a delete: goes home and offers undo for a few seconds. */
   deleted: () => void
+  /** Sync the schedule again even if unchanged, e.g. once notification permission is granted. */
+  resync: () => void
+  invite: () => void
 }
 
 function syncEntries(fixer: Fixer): SyncEntry[] {
@@ -51,6 +55,20 @@ export function App({ ports }: { ports: Ports }) {
   const [, rerender] = useReducer((n: number) => n + 1, 0)
   const [[screen, param], go] = useHashRoute()
   const [undoable, setUndoable] = useState(false)
+  const { platform } = ports
+  // Invite to install on first open, and again the first time a reminder would be relied on.
+  const [invite, setInvite] = useState<InviteFlag | 'asked'>()
+  useEffect(() => {
+    if (!platform.standalone && !platform.seen('firstOpen')) setInvite('firstOpen')
+  }, [platform])
+  const relyingOnReminder = !!fixer && screen === 'm' && !!fixer.mission(param) && fixer.countdown(param) !== undefined
+  useEffect(() => {
+    if (relyingOnReminder && !invite && !platform.standalone && !platform.seen('firstReminder')) setInvite('firstReminder')
+  }, [relyingOnReminder, invite, platform])
+  const closeInvite = () => {
+    if (invite && invite !== 'asked') platform.markSeen(invite)
+    setInvite(undefined)
+  }
   useEffect(() => {
     if (!undoable) return
     const t = setTimeout(() => setUndoable(false), UNDO_MS)
@@ -104,6 +122,11 @@ export function App({ ports }: { ports: Ports }) {
       setUndoable(true)
       go('')
     },
+    resync: () => {
+      synced.current = undefined
+      rerender()
+    },
+    invite: () => setInvite('asked'),
   }
 
   return (
@@ -131,6 +154,7 @@ export function App({ ports }: { ports: Ports }) {
           <Home ui={ui} />
         )}
       </main>
+      {invite && <InstallInvite ui={ui} done={closeInvite} />}
       {undoable && (
         <div className="toast" role="status">
           ลบแล้ว
@@ -193,6 +217,7 @@ function Home({ ui }: { ui: Ui }) {
   return (
     <>
       <h1>ภารกิจ</h1>
+      <RemindersNotice ui={ui} showInstall={ui.invite} />
       <StatsStrip ui={ui} />
       {missions.length === 0 && <p className="muted">ยังไม่มีภารกิจ กด “รับภารกิจ” เมื่อได้รับงาน</p>}
       <ul className="list">

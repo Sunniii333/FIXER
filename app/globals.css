@@ -212,3 +212,23 @@ th, td { border: 2px solid var(--line); padding: 4px 10px; text-align: left; }
 input[type='file'] { padding: 8px; }
 .rules { margin: 0; padding-left: 1.6rem; display: flex; flex-direction: column; gap: 10px; font-weight: 700; }
 .rules li::marker { color: var(--accent); font-weight: 800; }
+.sheet {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: min(480px, 100%);
+  z-index: 10;
+  padding: 16px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface);
+  border: 3px solid var(--line);
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -6px 0 var(--line);
+}
+.sheet h2, .sheet p { margin: 0; }
+.how { margin: 0; padding-left: 1.4rem; }
+.notice { margin-bottom: 12px; padding: 10px 12px; background: var(--surface-2); border: 3px solid var(--line); border-left: 10px solid var(--danger); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
