@@ -7,7 +7,10 @@ import { MissionPage } from './MissionPage'
 import { EditForm, Walkthrough } from './EditMission'
 import { People } from './People'
 
-export type Ports = { clock: Clock; storage: Storage }
+/** Share: the native share sheet where there is one, else the clipboard. */
+export type Share = { share(text: string): Promise<'shared' | 'copied'> }
+
+export type Ports = { clock: Clock; storage: Storage; share: Share }
 
 export type Ui = {
   fixer: Fixer

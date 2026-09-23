@@ -1,6 +1,6 @@
 // Real browser adapters. Thin by design; checked by hand, not by automated tests.
 import type { Data, Storage } from '../core/fixer'
-import type { Ports } from './App'
+import type { Ports, Share } from './App'
 
 function idbStorage(): Storage {
   const db = new Promise<IDBDatabase>((resolve, reject) => {
@@ -24,6 +24,21 @@ function idbStorage(): Storage {
   }
 }
 
+const share: Share = {
+  async share(text) {
+    if (navigator.share) {
+      try {
+        await navigator.share({ text })
+        return 'shared'
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return 'shared' // the owner closed the sheet
+      }
+    }
+    await navigator.clipboard.writeText(text)
+    return 'copied'
+  },
+}
+
 export function realPorts(): Ports {
-  return { clock: Date, storage: idbStorage() }
+  return { clock: Date, storage: idbStorage(), share }
 }

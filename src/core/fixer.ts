@@ -249,6 +249,25 @@ export class Fixer {
     return true
   }
 
+  /** Ready-to-send Thai sentence for the Assigner; four fixed templates by state. */
+  statusSentence(id: string): string | undefined {
+    const m = this.get(id)
+    const what = `เรื่อง “${m.instruction}”`
+    const step = m.steps.findLast((s) => s.text.trim())?.text
+    const replan = m.replans.at(-1)
+    if (m.status === 'dropped') return undefined
+    if (m.status === 'done') {
+      const assigner = this.person(m.assignerId)
+      return `${assigner ? `${assigner.name}ครับ ` : ''}${what} เสร็จเรียบร้อยแล้วครับ`
+    }
+    if (replan) {
+      const why = replan.reason === 'other' && replan.note ? replan.note : replanReasonLabels[replan.reason]
+      return `${what} ต้องปรับแผนเพราะ${why}ครับ ตอนนี้เปลี่ยนมาทำ “${step}” ครับ`
+    }
+    if (m.steps[0]?.outcome === 'done') return `${what} กำลังดำเนินการอยู่ครับ ตอนนี้กำลังทำ “${step}” ครับ`
+    return `ได้รับ${what} แล้วครับ ${step ? `กำลังเริ่มจาก “${step}” ครับ` : 'กำลังวางก้าวแรกอยู่ครับ'}`
+  }
+
   people(): Person[] {
     return this.data.people
   }

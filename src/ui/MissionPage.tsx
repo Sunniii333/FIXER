@@ -60,6 +60,7 @@ export function MissionPage({ ui, id }: { ui: Ui; id: string }) {
       </div>
 
       {m.status === 'done' && <p className="tag">เสร็จแล้ว {dateLabel(m.doneAt!)} {clockTime(m.doneAt!)}</p>}
+      <StatusBox ui={ui} id={id} />
       {m.status === 'dropped' && <p className="tag bad">ยกเลิกแล้ว: {m.dropReason}</p>}
 
       {current && !mode && (
@@ -306,5 +307,24 @@ export function Helpers({ ui, id }: { ui: Ui; id: string }) {
         </li>
       ))}
     </ul>
+  )
+}
+
+function StatusBox({ ui, id }: { ui: Ui; id: string }) {
+  const [result, setResult] = useState<string>()
+  const sentence = ui.fixer.statusSentence(id)
+  if (!sentence) return null
+  const done = ui.fixer.mission(id)!.status === 'done'
+  return (
+    <section className="status" aria-label="ประโยคสถานะ">
+      <p>{sentence}</p>
+      <button
+        className={done ? 'primary' : ''}
+        onClick={async () => setResult((await ui.ports.share.share(sentence)) === 'copied' ? 'คัดลอกแล้ว' : undefined)}
+      >
+        {done ? 'บอกผู้สั่งงานว่าเสร็จแล้ว' : 'ส่งสถานะ'}
+      </button>
+      {result && <small role="status">{result}</small>}
+    </section>
   )
 }

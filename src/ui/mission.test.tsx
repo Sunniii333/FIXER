@@ -51,7 +51,6 @@ it('close, reopen with a new Step, and drop with a reason', async () => {
   await screen.getByRole('button', { name: 'ตั้งก้าวนี้' }).click()
 
   await screen.getByRole('button', { name: 'ปิดงาน' }).click()
-  await expect.element(screen.getByText('เสร็จแล้ว', { exact: false })).toBeVisible()
   await screen.getByRole('button', { name: 'เปิดงานอีกครั้ง' }).click()
   await screen.getByLabelText('ก้าวต่อไปคืออะไร?').fill('แก้ตามคอมเมนต์')
   await screen.getByRole('button', { name: 'เปิดงาน' }).click()
@@ -76,4 +75,19 @@ it('delete can be undone for a few seconds', async () => {
   await expect.element(screen.getByText('สร้างผิด')).not.toBeInTheDocument()
   await screen.getByRole('button', { name: 'เลิกทำ' }).click()
   await expect.element(screen.getByText('สร้างผิด')).toBeVisible()
+})
+
+it('shares the Status sentence, and closing offers the done-sentence', async () => {
+  const ports = fakePorts()
+  const screen = await render(<App ports={ports} />)
+  await quickCapture(screen, 'ทำรายงาน', 'เปิดไฟล์')
+  await screen.getByRole('button', { name: 'ส่งสถานะ' }).click()
+  await expect.poll(() => ports.shared).toEqual(['ได้รับเรื่อง “ทำรายงาน” แล้วครับ กำลังเริ่มจาก “เปิดไฟล์” ครับ'])
+
+  await screen.getByRole('button', { name: 'ทำก้าวแรกแล้ว' }).click()
+  await screen.getByLabelText('ก้าวต่อไปคืออะไร?').fill('ส่งไฟล์')
+  await screen.getByRole('button', { name: 'ตั้งก้าวนี้' }).click()
+  await screen.getByRole('button', { name: 'ปิดงาน' }).click()
+  await screen.getByRole('button', { name: 'บอกผู้สั่งงานว่าเสร็จแล้ว' }).click()
+  await expect.poll(() => ports.shared.at(-1)).toBe('เรื่อง “ทำรายงาน” เสร็จเรียบร้อยแล้วครับ')
 })

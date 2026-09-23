@@ -243,6 +243,40 @@ describe('close, drop, reopen, delete', () => {
   })
 })
 
+describe('Status sentence', () => {
+  it('picks the template for each state and fills it from the Instruction, current Step and latest Replan reason', async () => {
+    const { fixer } = await setup()
+    await fixer.savePerson({ id: 'p1', name: 'พี่เอ', canHelpWith: [] })
+    await activeMission(fixer, 'm1', 'เปิดไฟล์ยอดขาย')
+    await fixer.edit('m1', { instruction: 'ทำรายงานยอดขาย' })
+    expect(fixer.statusSentence('m1')).toBe('ได้รับเรื่อง “ทำรายงานยอดขาย” แล้วครับ กำลังเริ่มจาก “เปิดไฟล์ยอดขาย” ครับ')
+
+    await fixer.completeStep('m1')
+    await fixer.editStep('m1', 'm1-s1', 'ทำกราฟ')
+    expect(fixer.statusSentence('m1')).toBe('เรื่อง “ทำรายงานยอดขาย” กำลังดำเนินการอยู่ครับ ตอนนี้กำลังทำ “ทำกราฟ” ครับ')
+
+    await fixer.replan('m1', { reason: 'access', step: 'ขอสิทธิ์ระบบ' })
+    await fixer.replan('m1', { reason: 'waiting', step: 'รอไฟล์จากบัญชี' })
+    expect(fixer.statusSentence('m1')).toBe(
+      'เรื่อง “ทำรายงานยอดขาย” ต้องปรับแผนเพราะรอคนอื่นอยู่ครับ ตอนนี้เปลี่ยนมาทำ “รอไฟล์จากบัญชี” ครับ',
+    )
+
+    await fixer.close('m1')
+    expect(fixer.statusSentence('m1')).toBe('เรื่อง “ทำรายงานยอดขาย” เสร็จเรียบร้อยแล้วครับ')
+    await fixer.edit('m1', { assignerId: 'p1' })
+    expect(fixer.statusSentence('m1')).toBe('พี่เอครับ เรื่อง “ทำรายงานยอดขาย” เสร็จเรียบร้อยแล้วครับ')
+  })
+
+  it('uses the note of an "other" Replan as its reason, and has nothing to say for a Dropped Mission', async () => {
+    const { fixer } = await setup()
+    await activeMission(fixer)
+    await fixer.replan('m1', { reason: 'other', note: 'เครื่องพัง', step: 'ยืมเครื่องเพื่อน' })
+    expect(fixer.statusSentence('m1')).toContain('ต้องปรับแผนเพราะเครื่องพังครับ')
+    await fixer.drop('m1', 'ยกเลิก')
+    expect(fixer.statusSentence('m1')).toBeUndefined()
+  })
+})
+
 describe('People', () => {
   it('adds, edits and removes People, persisted; roles belong to each Mission', async () => {
     const { fixer, reload } = await setup()
