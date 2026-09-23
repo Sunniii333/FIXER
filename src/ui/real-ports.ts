@@ -1,6 +1,6 @@
 // Real browser adapters. Thin by design; checked by hand, not by automated tests.
 import type { Data, Storage } from '../core/fixer'
-import type { Ports, Share } from './App'
+import type { Ports, ReminderSync, Share, SyncEntry } from './App'
 
 function idbStorage(): Storage {
   const db = new Promise<IDBDatabase>((resolve, reject) => {
@@ -39,6 +39,34 @@ const share: Share = {
   },
 }
 
+function reminderSync(): ReminderSync {
+  let pending: SyncEntry[] | undefined
+  const post = async (entries: SyncEntry[]) => {
+    const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    if (!key || !('PushManager' in window) || Notification.permission !== 'granted') return
+    const reg = await navigator.serviceWorker.ready
+    const subscription =
+      (await reg.pushManager.getSubscription()) ??
+      (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }))
+    const res = await fetch('/api/reminders', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ subscription: subscription.toJSON(), entries }),
+    })
+    if (!res.ok) throw new Error(`sync failed: ${res.status}`)
+  }
+  // offline: keep only the latest schedule and send it when the connection returns
+  addEventListener('online', () => pending && reminders.sync(pending))
+  const reminders: ReminderSync = {
+    async sync(entries) {
+      pending = entries
+      await post(entries)
+      if (pending === entries) pending = undefined
+    },
+  }
+  return reminders
+}
+
 export function realPorts(): Ports {
-  return { clock: Date, storage: idbStorage(), share }
+  return { clock: Date, storage: idbStorage(), share, reminders: reminderSync() }
 }

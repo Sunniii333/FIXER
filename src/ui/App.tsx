@@ -1,8 +1,8 @@
 'use client'
 // Every screen that touches Mission content lives under this client component.
 // Mission data is loaded from the Storage port in the browser, never from the server.
-import { useEffect, useReducer, useState } from 'react'
-import { Fixer, UNDO_MS, type Clock, type Mission, type Storage } from '../core/fixer'
+import { useEffect, useReducer, useRef, useState } from 'react'
+import { Fixer, UNDO_MS, type Clock, type Mission, type ReminderKind, type Storage } from '../core/fixer'
 import { MissionPage } from './MissionPage'
 import { EditForm, Walkthrough } from './EditMission'
 import { People } from './People'
@@ -12,7 +12,11 @@ import { Rules, Settings } from './Settings'
 /** Share: the native share sheet where there is one, else the clipboard. */
 export type Share = { share(text: string): Promise<'shared' | 'copied'> }
 
-export type Ports = { clock: Clock; storage: Storage; share: Share }
+/** ReminderSync: posts the derived, content-blind schedule to the reminder backend. */
+export type SyncEntry = { dueAt: number; kind: ReminderKind; count?: number }
+export type ReminderSync = { sync(entries: SyncEntry[]): Promise<void> }
+
+export type Ports = { clock: Clock; storage: Storage; share: Share; reminders: ReminderSync }
 
 export type Ui = {
   fixer: Fixer
@@ -21,6 +25,11 @@ export type Ui = {
   go: (path: string) => void
   /** Call after a delete: goes home and offers undo for a few seconds. */
   deleted: () => void
+}
+
+function syncEntries(fixer: Fixer): SyncEntry[] {
+  if (!fixer.settings().reminderEnabled) return []
+  return fixer.pendingReminders().map(({ kind, at, count }) => ({ dueAt: at, kind, ...(count !== undefined && { count }) }))
 }
 
 function useHashRoute() {
@@ -62,6 +71,15 @@ export function App({ ports }: { ports: Ports }) {
   useEffect(() => {
     if (theme) document.documentElement.dataset.theme = theme
   }, [theme])
+
+  // Re-sync whenever the derived schedule changes (create, Step change, close, drop, delete, settings…).
+  const schedule = fixer && JSON.stringify(syncEntries(fixer))
+  const synced = useRef<string>(undefined)
+  useEffect(() => {
+    if (schedule === undefined || schedule === synced.current) return
+    synced.current = schedule
+    ports.reminders.sync(JSON.parse(schedule)).catch(() => {})
+  })
 
   if (!fixer) return null
   const ui: Ui = {

@@ -25,6 +25,10 @@ export const replanReasonLabels: Record<ReplanReason, string> = {
 }
 export type Replan = { at: number; reason: ReplanReason; note?: string; abandonedStepId: string; newStepId: string }
 
+export const reminderKinds = ['fiveMinute', 'stuck', 'review', 'deadline', 'backup'] as const
+export type ReminderKind = (typeof reminderKinds)[number]
+export type Reminder = { kind: ReminderKind; at: number; count?: number }
+
 export type HistoryEntry = { at: number; field: string; oldValue: unknown }
 
 export type Mission = {
@@ -290,6 +294,20 @@ export class Fixer {
       open: open.length,
       overdue: open.filter((m) => overdue(m, now)).length,
     }
+  }
+
+  /**
+   * What should fire and when, derived from state. Content-blind by construction:
+   * only a kind, a time and an optional count — never Mission text.
+   * Anything whose time has already passed is skipped.
+   */
+  pendingReminders(): Reminder[] {
+    const now = this.clock.now()
+    const open = this.data.missions.filter((m) => m.status === 'draft' || m.status === 'active')
+    const all: Reminder[] = open
+      .filter((m) => !m.steps[0]?.outcome)
+      .map((m) => ({ kind: 'fiveMinute', at: m.createdAt + FIVE_MIN }))
+    return all.filter((r) => r.at > now).sort((a, b) => a.at - b.at)
   }
 
   settings(): Settings {

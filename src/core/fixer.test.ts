@@ -439,6 +439,36 @@ describe('export and import', () => {
   })
 })
 
+describe('pendingReminders', () => {
+  const kinds = (fixer: Fixer, kind: string) => fixer.pendingReminders().filter((r) => r.kind === kind)
+
+  it('has a five-minute alert at createdAt + 5 min for each Mission without a First step, Drafts included', async () => {
+    const { fixer, clock } = await setup()
+    await fixer.receive('draft')
+    clock.advance(MIN)
+    await activeMission(fixer, 'a')
+    expect(kinds(fixer, 'fiveMinute')).toEqual([
+      { kind: 'fiveMinute', at: T0 + 5 * MIN },
+      { kind: 'fiveMinute', at: T0 + 6 * MIN },
+    ])
+    await fixer.completeStep('a')
+    await fixer.drop('draft', 'ซ้ำ')
+    expect(kinds(fixer, 'fiveMinute')).toEqual([])
+  })
+
+  it('skips a five-minute alert whose time has passed, and drops it on close or delete', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer, 'a')
+    await activeMission(fixer, 'b')
+    await fixer.close('a')
+    await fixer.delete('b')
+    expect(kinds(fixer, 'fiveMinute')).toEqual([])
+    await activeMission(fixer, 'c')
+    clock.advance(5 * MIN)
+    expect(kinds(fixer, 'fiveMinute')).toEqual([])
+  })
+})
+
 describe('Settings', () => {
   it('starts from the defaults and keeps changes across a reload', async () => {
     const { fixer, reload } = await setup()
