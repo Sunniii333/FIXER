@@ -3,7 +3,7 @@
 // Mission data is loaded from the Storage port in the browser, never from the server.
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { Fixer, UNDO_MS, type Clock, type Mission, type ReminderKind, type Storage } from '../core/fixer'
-import { MissionPage, mmss } from './MissionPage'
+import { MissionPage, NameStep, dateLabel, mmss } from './MissionPage'
 import { EditForm, Walkthrough } from './EditMission'
 import { People } from './People'
 import { Review } from './Review'
@@ -184,7 +184,8 @@ export function App({ ports }: { ports: Ports }) {
   )
 }
 
-export const missionPath = (m: Mission) => (m.status === 'draft' ? `receive/${m.id}` : `m/${m.id}`)
+export const missionPath = (m: Mission) =>
+  m.status === 'draft' ? `receive/${m.id}` : m.status === 'queued' ? `edit/${m.id}` : `m/${m.id}`
 
 function StatsStrip({ ui }: { ui: Ui }) {
   const s = ui.fixer.stats()
@@ -209,31 +210,44 @@ function StatsStrip({ ui }: { ui: Ui }) {
   )
 }
 
-const statusLabel = { draft: 'ร่าง', active: 'กำลังทำ', done: 'เสร็จแล้ว', dropped: 'ยกเลิกแล้ว' }
+const statusLabel = { draft: 'ร่าง', queued: 'รอคิว', active: 'กำลังทำ', done: 'เสร็จแล้ว', dropped: 'ยกเลิกแล้ว' }
 
 function Home({ ui }: { ui: Ui }) {
   const missions = ui.fixer.homeList()
   const dropped = ui.fixer.missions().filter((m) => m.status === 'dropped')
+  // An overdue Queued Mission joins the overdue group at the top (homeList already puts it there).
+  const queued = missions.filter((m) => m.status === 'queued' && !ui.fixer.isOverdue(m.id))
+  const card = (m: Mission) => (
+    <li key={m.id}>
+      <a className="card" href={`#/${missionPath(m)}`}>
+        {ui.fixer.isOverdue(m.id) ? (
+          <span className="tag bad">เลยกำหนด</span>
+        ) : (
+          <span className="tag">{statusLabel[m.status]}</span>
+        )}
+        <span>{m.instruction || '(ยังไม่มีคำสั่งงาน)'}</span>
+        {m.status === 'draft' && <small className="muted">ทำต่อ ›</small>}
+      </a>
+    </li>
+  )
   return (
     <>
       <h1>ภารกิจ</h1>
       <RemindersNotice ui={ui} showInstall={ui.invite} />
       <StatsStrip ui={ui} />
       {missions.length === 0 && <p className="muted">ยังไม่มีภารกิจ กด “รับภารกิจ” เมื่อได้รับงาน</p>}
-      <ul className="list">
-        {missions.map((m) => (
-          <li key={m.id}>
-            <a className="card" href={`#/${missionPath(m)}`}>
-              {ui.fixer.isOverdue(m.id) ? (
-                <span className="tag bad">เลยกำหนด</span>
-              ) : (
-                <span className="tag">{statusLabel[m.status]}</span>
-              )}
-              <span>{m.instruction || '(ยังไม่มีคำสั่งงาน)'}</span>
-            </a>
-          </li>
-        ))}
-      </ul>
+      <ul className="list">{missions.filter((m) => m.status !== 'done' && !queued.includes(m)).map(card)}</ul>
+      {queued.length > 0 && (
+        <section aria-label="รอคิว">
+          <h2>รอคิว ({queued.length})</h2>
+          <ul className="list">
+            {queued.map((m) => (
+              <QueuedCard key={m.id} ui={ui} m={m} />
+            ))}
+          </ul>
+        </section>
+      )}
+      <ul className="list">{missions.filter((m) => m.status === 'done').map(card)}</ul>
       {dropped.length > 0 && (
         <details className="history">
           <summary>ยกเลิกแล้ว ({dropped.length})</summary>
@@ -260,6 +274,58 @@ function Home({ ui }: { ui: Ui }) {
   )
 }
 
+function waited(ms: number) {
+  const min = Math.floor(ms / 60_000)
+  return min < 60 ? `${min} นาที` : min < 24 * 60 ? `${Math.floor(min / 60)} ชม.` : `${Math.floor(min / (24 * 60))} วัน`
+}
+
+/** No countdown while Queued: only how long it has waited. */
+function QueuedCard({ ui, m }: { ui: Ui; m: Mission }) {
+  const { fixer } = ui
+  const [dropping, setDropping] = useState(false)
+  return (
+    <li className="card">
+      <a href={`#/${missionPath(m)}`}>{m.instruction}</a>
+      <small className="muted">
+        {m.deadlineAt !== undefined && `กำหนดส่ง ${dateLabel(m.deadlineAt)} · `}
+        รอมา {waited(ui.ports.clock.now() - m.queuedAt!)}
+      </small>
+      {dropping ? (
+        <NameStep
+          label="ทำไมถึงยกเลิก?"
+          button="ยืนยันยกเลิก"
+          onCancel={() => setDropping(false)}
+          onSave={(reason) => ui.run(() => fixer.drop(m.id, reason))}
+        />
+      ) : (
+        <div className="row">
+          <button
+            className="primary"
+            onClick={async () => {
+              await ui.run(() => fixer.pickUp(m.id))
+              ui.go(`receive/${m.id}`)
+            }}
+          >
+            หยิบ
+          </button>
+          <button className="link" onClick={() => setDropping(true)}>
+            ยกเลิกภารกิจ
+          </button>
+          <button
+            className="link"
+            onClick={async () => {
+              await ui.run(() => fixer.delete(m.id))
+              ui.deleted()
+            }}
+          >
+            ลบ
+          </button>
+        </div>
+      )}
+    </li>
+  )
+}
+
 function Receive({ ui, captureId }: { ui: Ui; captureId: string }) {
   const { fixer } = ui
   useEffect(() => {
@@ -268,7 +334,9 @@ function Receive({ ui, captureId }: { ui: Ui; captureId: string }) {
   }, [captureId])
   const m = fixer.mission(captureId)
   if (!m) return null
+  if (m.status === 'queued') return <Home ui={ui} />
   if (m.status !== 'draft') return <MissionPage ui={ui} id={m.id} />
+  const pickedUp = m.pickedUpAt !== undefined
   const ready = m.instruction.trim() && m.steps[0]?.text.trim()
   return (
     <form
@@ -287,7 +355,7 @@ function Receive({ ui, captureId }: { ui: Ui; captureId: string }) {
       <label>
         คำสั่งงาน
         <textarea
-          autoFocus
+          autoFocus={!pickedUp}
           rows={3}
           value={m.instruction}
           onChange={(e) => ui.run(() => fixer.edit(m.id, { instruction: e.target.value }))}
@@ -296,6 +364,7 @@ function Receive({ ui, captureId }: { ui: Ui; captureId: string }) {
       <label>
         ก้าวแรก
         <input
+          autoFocus={pickedUp}
           value={m.steps[0]?.text ?? ''}
           placeholder="สิ่งที่ลงมือทำได้ภายใน 5 นาที"
           onChange={(e) => ui.run(() => fixer.edit(m.id, { firstStep: e.target.value }))}
@@ -308,6 +377,18 @@ function Receive({ ui, captureId }: { ui: Ui; captureId: string }) {
         <button className="primary big" disabled={!ready}>
           เริ่มลงมือ
         </button>
+        {fixer.canQueue(m.id) && (
+          <button
+            type="button"
+            disabled={!m.instruction.trim()}
+            onClick={async () => {
+              await ui.run(() => fixer.queue(m.id))
+              ui.go('')
+            }}
+          >
+            เข้าคิว (ยังไม่เริ่มนับเวลา)
+          </button>
+        )}
         <button
           type="button"
           className="link"

@@ -4,7 +4,7 @@
 export type Clock = { now(): number }
 export type Storage = { load(): Promise<Data | undefined>; save(data: Data): Promise<void> }
 
-export type Status = 'draft' | 'active' | 'done' | 'dropped'
+export type Status = 'draft' | 'queued' | 'active' | 'done' | 'dropped'
 
 export type Step = {
   id: string
@@ -45,6 +45,8 @@ export type Mission = {
   status: Status
   dropReason?: string
   createdAt: number
+  queuedAt?: number
+  pickedUpAt?: number // Clock start for a Mission that went through the Queue
   doneAt?: number
   droppedAt?: number
   steps: Step[]
@@ -125,7 +127,7 @@ export class Fixer {
     const m = this.get(id)
     const { firstStep, ...fields } = patch
     if (firstStep !== undefined) {
-      if (m.status !== 'draft') throw new Error('First step is fixed once active')
+      if (m.status !== 'draft' && m.status !== 'queued') throw new Error('First step is fixed once active')
       m.steps = [{ id: `${id}-s0`, text: firstStep, startedAt: m.createdAt }]
     }
     if ('doneDefinition' in fields && fields.doneDefinition !== m.doneDefinition)
@@ -144,11 +146,37 @@ export class Fixer {
     await this.save()
   }
 
-  /** ms left on the Five-minute clock, derived from createdAt; undefined once the First step is done. */
+  /** R1, R2: a Draft never picked up, at most five minutes past receipt. */
+  canQueue(id: string) {
+    const m = this.get(id)
+    return m.status === 'draft' && m.pickedUpAt === undefined && this.clock.now() - m.createdAt <= FIVE_MIN
+  }
+
+  /** Notes a Draft for later: no clock while Queued. Idempotent. */
+  async queue(id: string) {
+    const m = this.get(id)
+    if (m.status === 'queued') return
+    if (!this.canQueue(id)) throw new Error('Can no longer be Queued')
+    if (!m.instruction.trim()) throw new Error('Need an Instruction')
+    m.status = 'queued'
+    m.queuedAt = this.clock.now()
+    await this.save()
+  }
+
+  /** Back to Draft; the Five-minute clock starts now. Idempotent. */
+  async pickUp(id: string) {
+    const m = this.get(id)
+    if (m.status !== 'queued') return
+    m.status = 'draft'
+    m.pickedUpAt = this.clock.now()
+    await this.save()
+  }
+
+  /** ms left on the Five-minute clock, from Clock start; undefined while Queued or once the First step is done. */
   countdown(id: string): number | undefined {
     const m = this.get(id)
-    if (m.steps[0]?.outcome) return undefined
-    return Math.max(0, m.createdAt + FIVE_MIN - this.clock.now())
+    if (m.steps[0]?.outcome || m.status === 'queued') return undefined
+    return Math.max(0, clockStart(m) + FIVE_MIN - this.clock.now())
   }
 
   /** true / false once resolved; undefined while still inside the first five minutes. */
@@ -204,7 +232,7 @@ export class Fixer {
 
   async drop(id: string, reason: string) {
     const m = this.get(id)
-    if (m.status !== 'draft' && m.status !== 'active') throw new Error('Already closed')
+    if (!isOpen(m)) throw new Error('Already closed')
     if (!reason.trim()) throw new Error('Say why')
     const current = currentStep(m)
     if (current) this.endCurrentStep(m, current, 'abandoned')
@@ -257,26 +285,31 @@ export class Fixer {
     return overdue(this.get(id), this.clock.now())
   }
 
-  /** Home order: overdue → not started (Drafts included) → in progress → done. Dropped live in the history. */
+  /**
+   * Home order: overdue → not started (Drafts included) → in progress → Queued → done. Dropped live in the history.
+   * Queued: nearest deadline first, then no deadline; oldest received first within each (R7).
+   */
   homeList(): Mission[] {
     const now = this.clock.now()
     const rank = (m: Mission) =>
-      overdue(m, now) ? 0 : m.status === 'done' ? 3 : m.steps.some((s) => s.outcome) ? 2 : 1
+      overdue(m, now) ? 0 : m.status === 'done' ? 4 : m.status === 'queued' ? 3 : m.steps.some((s) => s.outcome) ? 2 : 1
+    const queueOrder = (a: Mission, b: Mission) =>
+      (a.deadlineAt ?? Infinity) - (b.deadlineAt ?? Infinity) || a.createdAt - b.createdAt
     return this.data.missions
       .filter((m) => m.status !== 'dropped')
       .map((m) => ({ m, r: rank(m) }))
-      .sort((a, b) => a.r - b.r || b.m.createdAt - a.m.createdAt)
+      .sort((a, b) => a.r - b.r || (a.r === 3 ? queueOrder(a.m, b.m) : b.m.createdAt - a.m.createdAt))
       .map(({ m }) => m)
   }
 
-  /** On-time start rate per month received. Missions still inside their five minutes are left out. */
+  /** On-time start rate per month of Clock start. Missions still inside their five minutes, or never picked up, are left out. */
   rateByMonth(): Record<string, { onTime: number; total: number }> {
     const now = this.clock.now()
     const out: Record<string, { onTime: number; total: number }> = {}
     for (const m of this.data.missions) {
       const result = onTime(m, now)
       if (result === undefined) continue
-      const bucket = (out[monthKey(m.createdAt)] ??= { onTime: 0, total: 0 })
+      const bucket = (out[monthKey(clockStart(m))] ??= { onTime: 0, total: 0 })
       bucket.total++
       if (result) bucket.onTime++
     }
@@ -287,7 +320,7 @@ export class Fixer {
   stats() {
     const now = this.clock.now()
     const month = monthKey(now)
-    const open = this.data.missions.filter((m) => m.status === 'draft' || m.status === 'active')
+    const open = this.data.missions.filter(isOpen)
     return {
       rate: this.rateByMonth()[month] ?? { onTime: 0, total: 0 },
       closedThisMonth: this.data.missions.filter((m) => m.status === 'done' && monthKey(m.doneAt!) === month).length,
@@ -303,11 +336,11 @@ export class Fixer {
    */
   pendingReminders(): Reminder[] {
     const now = this.clock.now()
-    const open = this.data.missions.filter((m) => m.status === 'draft' || m.status === 'active')
+    const open = this.data.missions.filter(isOpen)
     const { stuckAfter, reviewTime, deadlineTime, lastExportAt } = this.data.settings
     const all: Reminder[] = []
     for (const m of open) {
-      if (!m.steps[0]?.outcome) all.push({ kind: 'fiveMinute', at: m.createdAt + FIVE_MIN })
+      if (!m.steps[0]?.outcome && m.status !== 'queued') all.push({ kind: 'fiveMinute', at: clockStart(m) + FIVE_MIN })
       const current = currentStep(m)
       if (current) all.push({ kind: 'stuck', at: current.startedAt + stuckAfter * 60_000 })
     }
@@ -364,8 +397,9 @@ export class Fixer {
     }
     const f = raw as Record<string, unknown>
     if (typeof f !== 'object' || f === null) return { ok: false, error: 'รูปแบบไฟล์ไม่ถูกต้อง' }
-    if (f.version !== EXPORT_VERSION)
-      return { ok: false, error: `ไฟล์เป็นเวอร์ชัน ${String(f.version)} แต่แอปนี้อ่านได้เฉพาะเวอร์ชัน ${EXPORT_VERSION}` }
+    // version 1 has no Queue; its Missions simply were never Queued (R11)
+    if (f.version !== 1 && f.version !== EXPORT_VERSION)
+      return { ok: false, error: `ไฟล์เป็นเวอร์ชัน ${String(f.version)} แต่แอปนี้อ่านได้เฉพาะเวอร์ชัน 1–${EXPORT_VERSION}` }
     if (!Array.isArray(f.missions) || !Array.isArray(f.people) || typeof f.settings !== 'object' || !f.settings)
       return { ok: false, error: 'รูปแบบไฟล์ไม่ถูกต้อง: ต้องมีภารกิจ รายชื่อคน และการตั้งค่า' }
     if (!f.missions.every(isMission)) return { ok: false, error: 'รูปแบบไฟล์ไม่ถูกต้อง: ข้อมูลภารกิจบางรายการเสีย' }
@@ -389,7 +423,7 @@ export class Fixer {
   review({ from, to }: { from: number; to: number }) {
     const now = this.clock.now()
     const ms = this.data.missions.filter((m) => m.createdAt >= from && m.createdAt <= to)
-    const open = ms.filter((m) => m.status === 'draft' || m.status === 'active')
+    const open = ms.filter(isOpen)
     const replansByReason: Partial<Record<ReplanReason, number>> = {}
     for (const r of ms.flatMap((m) => m.replans)) replansByReason[r.reason] = (replansByReason[r.reason] ?? 0) + 1
     const missedByMonth: Record<string, number> = {}
@@ -401,7 +435,8 @@ export class Fixer {
     return {
       open,
       overdue: open.filter((m) => overdue(m, now)),
-      staleDrafts: open.filter((m) => m.status === 'draft' && now - m.createdAt > DAY), // "ร่างค้าง"
+      staleDrafts: open.filter((m) => m.status === 'draft' && now - clockStart(m) > DAY), // "ร่างค้าง"
+      staleQueue: open.filter((m) => m.status === 'queued' && now - m.queuedAt! > DAY), // "คิวค้าง"
       goalUnclear: ms.filter((m) => flags(m).goalUnclear),
       oftenReplanned: ms.filter((m) => m.replans.length >= OFTEN_REPLANNED).sort((a, b) => b.replans.length - a.replans.length),
       replansByReason,
@@ -421,7 +456,7 @@ export class Fixer {
     const named = currentStep(m)?.text.trim()
     const now = (doing: string) => (named ? `${doing} “${step}” ครับ` : `เพิ่งทำ “${step}” เสร็จครับ`)
     const replan = m.replans.at(-1)
-    if (m.status === 'dropped') return undefined
+    if (m.status === 'dropped' || m.status === 'queued') return undefined
     if (m.status === 'done') {
       const assigner = this.person(m.assignerId)
       return `${assigner ? `${assigner.name}ครับ ` : ''}${what} เสร็จเรียบร้อยแล้วครับ`
@@ -491,10 +526,21 @@ export function flags(m: Mission) {
   }
 }
 
+/** Pick up time if it went through the Queue, else receipt (old data has no pickedUpAt). */
+export function clockStart(m: Mission) {
+  return m.pickedUpAt ?? m.createdAt
+}
+
+export function isOpen(m: Mission) {
+  return m.status === 'draft' || m.status === 'queued' || m.status === 'active'
+}
+
 function onTime(m: Mission, now: number): boolean | undefined {
+  if (m.queuedAt !== undefined && m.pickedUpAt === undefined) return undefined // never committed: no clock (R4)
   const first = m.steps[0]
-  if (first?.outcome === 'done') return first.doneAt! - m.createdAt <= FIVE_MIN
-  if (first?.outcome || m.status === 'done' || m.status === 'dropped' || now >= m.createdAt + FIVE_MIN) return false
+  const start = clockStart(m)
+  if (first?.outcome === 'done') return first.doneAt! - start <= FIVE_MIN
+  if (first?.outcome || m.status === 'done' || m.status === 'dropped' || now >= start + FIVE_MIN) return false
   return undefined
 }
 
@@ -515,7 +561,7 @@ export type MissionPatch = Partial<
 
 /** Past its real date and not closed. Text-only deadlines can't be overdue. */
 function overdue(m: Mission, now: number) {
-  return (m.status === 'draft' || m.status === 'active') && m.deadlineAt !== undefined && now > m.deadlineAt
+  return isOpen(m) && m.deadlineAt !== undefined && now > m.deadlineAt
 }
 
 export function monthKey(ms: number) {
@@ -523,8 +569,8 @@ export function monthKey(ms: number) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-const EXPORT_VERSION = 1
-const statuses: Status[] = ['draft', 'active', 'done', 'dropped']
+const EXPORT_VERSION = 2
+const statuses: Status[] = ['draft', 'queued', 'active', 'done', 'dropped']
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null
 
 function isMission(x: unknown): x is Mission {

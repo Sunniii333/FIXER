@@ -30,6 +30,7 @@ export function Review({ ui }: { ui: Ui }) {
       <Section title="ยังเปิดอยู่" ms={r.open} ui={ui} />
       <Section title="เลยกำหนด" ms={r.overdue} ui={ui} />
       <Section title="ร่างค้าง" ms={r.staleDrafts} ui={ui} />
+      <Section title="คิวค้าง" ms={r.staleQueue} ui={ui} />
       <Section title="เป้ายังไม่ชัด" ms={r.goalUnclear} ui={ui} />
       <Section title="แผนพังบ่อย" ms={r.oftenReplanned} ui={ui} note={(m) => `${m.replans.length} ครั้ง`} />
 

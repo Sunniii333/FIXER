@@ -416,7 +416,7 @@ describe('export and import', () => {
     const { fixer, clock } = await withData()
     clock.advance(MIN)
     const file = await fixer.exportData()
-    expect(JSON.parse(file)).toMatchObject({ version: 1, missions: expect.any(Array), people: expect.any(Array) })
+    expect(JSON.parse(file)).toMatchObject({ version: 2, missions: expect.any(Array), people: expect.any(Array) })
     expect(fixer.settings().lastExportAt).toBe(T0 + MIN)
 
     const other = (await setup()).fixer
@@ -435,7 +435,7 @@ describe('export and import', () => {
     ['not JSON', '{oops'],
     ['wrong shape', JSON.stringify({ version: 1, missions: 'nope', people: [], settings: {} })],
     ['a bad Mission', JSON.stringify({ version: 1, missions: [{ id: 1 }], people: [], settings: {} })],
-    ['a newer version', JSON.stringify({ version: 2, missions: [], people: [], settings: {} })],
+    ['a newer version', JSON.stringify({ version: 3, missions: [], people: [], settings: {} })],
   ])('rejects %s with a message and leaves the data alone', async (_, text) => {
     const { fixer, reload } = await withData()
     const before = structuredClone(fixer.missions())
@@ -612,5 +612,191 @@ describe('the Step chain', () => {
     const m = fixer.mission('m1')!
     expect(m.steps[0]).toEqual({ ...before, text: 'เปิดไฟล์' })
     expect(m.history).toEqual([{ at: T0 + 2 * MIN, field: `step:${before.id}`, oldValue: 'เปิดไฟล' }])
+  })
+})
+
+describe('Queue and Pick up', () => {
+  const HOUR = 60 * MIN
+  async function queued(fixer: Fixer, id = 'q1', extra: Parameters<Fixer['edit']>[1] = {}) {
+    await fixer.receive(id)
+    await fixer.edit(id, { instruction: `คิว ${id}`, ...extra })
+    await fixer.queue(id)
+  }
+  async function start(fixer: Fixer, id: string) {
+    await fixer.edit(id, { firstStep: 'เปิดไฟล์' })
+    await fixer.activate(id)
+    await fixer.completeStep(id)
+  }
+
+  it('R1 queue gate: only a Draft at most five minutes past receipt, exactly 5:00 included (example 3)', async () => {
+    const { fixer, clock } = await setup()
+    await fixer.receive('a')
+    await fixer.receive('b')
+    await fixer.edit('a', { instruction: 'x' })
+    await fixer.edit('b', { instruction: 'y' })
+    clock.advance(5 * MIN)
+    expect(fixer.canQueue('a')).toBe(true)
+    await fixer.queue('a')
+    clock.advance(1000)
+    expect(fixer.canQueue('b')).toBe(false)
+    await expect(fixer.queue('b')).rejects.toThrow()
+    expect(fixer.mission('b')!.status).toBe('draft')
+    await activeMission(fixer, 'c')
+    expect(fixer.canQueue('c')).toBe(false)
+  })
+
+  it('R1 needs an Instruction', async () => {
+    const { fixer } = await setup()
+    await fixer.receive('a')
+    await expect(fixer.queue('a')).rejects.toThrow()
+  })
+
+  it('R2 one trip: a picked-up Draft can never be Queued again (example 4)', async () => {
+    const { fixer } = await setup()
+    await queued(fixer)
+    await fixer.pickUp('q1')
+    expect(fixer.canQueue('q1')).toBe(false)
+    await expect(fixer.queue('q1')).rejects.toThrow()
+  })
+
+  it('R3 clock start is Pick up: example 1 on time, example 2 a miss', async () => {
+    const { fixer, clock } = await setup()
+    clock.advance(90_000)
+    await queued(fixer, 'on')
+    await queued(fixer, 'late')
+    clock.advance(2 * HOUR - 90_000)
+    await fixer.pickUp('on')
+    await fixer.pickUp('late')
+    expect(fixer.countdown('on')).toBe(5 * MIN)
+    expect(fixer.pendingReminders().filter((r) => r.kind === 'fiveMinute')).toEqual([
+      { kind: 'fiveMinute', at: T0 + 2 * HOUR + 5 * MIN },
+      { kind: 'fiveMinute', at: T0 + 2 * HOUR + 5 * MIN },
+    ])
+    clock.advance(3 * MIN)
+    await start(fixer, 'on')
+    expect(fixer.onTimeStart('on')).toBe(true)
+    clock.advance(3 * MIN)
+    expect(fixer.onTimeStart('late')).toBe(false)
+    await start(fixer, 'late')
+    expect(fixer.onTimeStart('late')).toBe(false)
+  })
+
+  it('R3 the rate is grouped by the month of Clock start', async () => {
+    const { fixer, clock } = await setup(new Date(2026, 7, 31, 23, 0).getTime())
+    await queued(fixer)
+    clock.advance(2 * HOUR)
+    await fixer.pickUp('q1')
+    await start(fixer, 'q1')
+    expect(fixer.rateByMonth()).toEqual({ '2026-09': { onTime: 1, total: 1 } })
+  })
+
+  it('R4 no clock while Queued, and dropping or deleting from the Queue is no miss (example 5)', async () => {
+    const { fixer, clock } = await setup()
+    await queued(fixer, 'q1')
+    await queued(fixer, 'q2')
+    await queued(fixer, 'q3')
+    clock.advance(3 * DAY)
+    expect(fixer.countdown('q1')).toBeUndefined()
+    expect(fixer.onTimeStart('q1')).toBeUndefined()
+    expect(fixer.pendingReminders().filter((r) => r.kind === 'fiveMinute')).toEqual([])
+    await fixer.drop('q2', 'ไม่ต้องทำแล้ว')
+    await fixer.delete('q3')
+    expect(fixer.mission('q2')).toMatchObject({ status: 'dropped', dropReason: 'ไม่ต้องทำแล้ว' })
+    expect(fixer.onTimeStart('q2')).toBeUndefined()
+    expect(fixer.rateByMonth()).toEqual({})
+  })
+
+  it('R5 Queued is Open: open count and Deadline nudge (example 6)', async () => {
+    const { fixer, clock } = await setup()
+    const deadlineAt = T0 + DAY
+    await queued(fixer, 'q1', { deadlineAt })
+    expect(fixer.stats().open).toBe(1)
+    expect(fixer.pendingReminders().some((r) => r.kind === 'deadline')).toBe(true)
+    expect(fixer.pendingReminders().some((r) => r.kind === 'review')).toBe(true)
+    clock.advance(DAY + MIN)
+    expect(fixer.isOverdue('q1')).toBe(true)
+    expect(fixer.homeList()[0].id).toBe('q1')
+    expect(fixer.countdown('q1')).toBeUndefined()
+  })
+
+  it('R6 no Status sentence while Queued', async () => {
+    const { fixer } = await setup()
+    await queued(fixer)
+    expect(fixer.statusSentence('q1')).toBeUndefined()
+  })
+
+  it('R7 home order: Queued after in progress, before done; nearest deadline, then oldest received', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer, 'done')
+    await fixer.close('done')
+    await queued(fixer, 'old')
+    clock.advance(MIN)
+    await queued(fixer, 'far', { deadlineAt: T0 + 3 * DAY })
+    await queued(fixer, 'near', { deadlineAt: T0 + DAY })
+    await queued(fixer, 'new')
+    await activeMission(fixer, 'busy')
+    await fixer.completeStep('busy')
+    expect(fixer.homeList().map((m) => m.id)).toEqual(['busy', 'near', 'far', 'old', 'new', 'done'])
+  })
+
+  it('R8 stale Queue: more than 24 hours after Queueing (example 7)', async () => {
+    const { fixer, clock } = await setup()
+    await queued(fixer)
+    clock.advance(DAY)
+    expect(fixer.review({ from: 0, to: clock.now() }).staleQueue).toEqual([])
+    clock.advance(MIN)
+    expect(fixer.review({ from: 0, to: clock.now() }).staleQueue.map((m) => m.id)).toEqual(['q1'])
+  })
+
+  it('R9 stale Draft counts from Clock start', async () => {
+    const { fixer, clock } = await setup()
+    await queued(fixer)
+    clock.advance(3 * DAY)
+    await fixer.pickUp('q1')
+    const r = fixer.review({ from: 0, to: clock.now() })
+    expect(r.staleDrafts).toEqual([])
+    expect(r.staleQueue).toEqual([])
+  })
+
+  it('R10 old data without Pick up keeps its clock at receipt', async () => {
+    const { fixer, clock } = await setup()
+    await activeMission(fixer)
+    clock.advance(4 * MIN)
+    await fixer.completeStep('m1')
+    expect(fixer.mission('m1')!.pickedUpAt).toBeUndefined()
+    expect(fixer.onTimeStart('m1')).toBe(true)
+  })
+
+  it('R11 exports the Queue and Pick up times, and still imports a version 1 file', async () => {
+    const { fixer } = await setup()
+    await queued(fixer, 'q1')
+    await queued(fixer, 'q2')
+    await fixer.pickUp('q2')
+    const file = JSON.parse(await fixer.exportData())
+    expect(file.version).toBe(2)
+    expect(file.missions[1]).toMatchObject({ queuedAt: T0, pickedUpAt: T0 })
+    const v1 = fixer.parseImport(JSON.stringify({ ...file, version: 1, missions: [] }))
+    expect(v1.ok).toBe(true)
+  })
+
+  it('R12 double taps act once', async () => {
+    const { fixer, clock } = await setup()
+    await fixer.receive('q1')
+    await fixer.edit('q1', { instruction: 'x' })
+    await Promise.all([fixer.queue('q1'), fixer.queue('q1')])
+    clock.advance(MIN)
+    await Promise.all([fixer.pickUp('q1'), fixer.pickUp('q1')])
+    clock.advance(MIN)
+    await fixer.pickUp('q1')
+    expect(fixer.mission('q1')).toMatchObject({ status: 'draft', queuedAt: T0, pickedUpAt: T0 + MIN })
+  })
+
+  it('keeps everything typed when Queued, and may be edited without starting the clock', async () => {
+    const { fixer } = await setup()
+    await queued(fixer, 'q1', { firstStep: 'โทร', deadlineText: 'พรุ่งนี้' })
+    await fixer.edit('q1', { instruction: 'ใหม่' })
+    expect(fixer.mission('q1')).toMatchObject({ status: 'queued', instruction: 'ใหม่', deadlineText: 'พรุ่งนี้' })
+    expect(fixer.mission('q1')!.steps[0].text).toBe('โทร')
+    expect(fixer.mission('q1')!.pickedUpAt).toBeUndefined()
   })
 })

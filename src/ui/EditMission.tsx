@@ -139,6 +139,7 @@ export function Walkthrough({ ui, id, back }: { ui: Ui; id: string; back: string
 export function EditForm({ ui, id }: { ui: Ui; id: string }) {
   const [p, setP] = useState(() => pick(ui.fixer.mission(id)!))
   const set = (patch: MissionPatch) => setP({ ...p, ...patch })
+  const back = ui.fixer.mission(id)!.status === 'queued' ? '' : `m/${id}` // editing a Queued Mission never picks it up
   return (
     <form
       className="stack"
@@ -146,7 +147,7 @@ export function EditForm({ ui, id }: { ui: Ui; id: string }) {
         e.preventDefault()
         if (!p.instruction?.trim()) return
         await ui.run(() => ui.fixer.edit(id, p))
-        ui.go(`m/${id}`)
+        ui.go(back)
       }}
     >
       <h1>แก้ไขภารกิจ</h1>
@@ -160,7 +161,7 @@ export function EditForm({ ui, id }: { ui: Ui; id: string }) {
         </div>
       ))}
       <div className="actions row">
-        <button type="button" onClick={() => ui.go(`m/${id}`)}>
+        <button type="button" onClick={() => ui.go(back)}>
           ยกเลิก
         </button>
         <button className="primary">บันทึก</button>
