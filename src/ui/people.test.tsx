@@ -8,7 +8,7 @@ async function addPerson(screen: Screen, name: string, help: string) {
   await screen.getByRole('button', { name: 'เพิ่มคน' }).click()
   await screen.getByLabelText('ชื่อ').fill(name)
   await screen.getByLabelText(help).click()
-  await screen.getByRole('button', { name: 'บันทึก' }).click()
+  await screen.getByRole('button', { name: 'บันทึก', exact: true }).click()
 }
 
 it('People: add, edit, remove; pick an Assigner and Helpers; the Mission lists its Helpers', async () => {
@@ -20,17 +20,20 @@ it('People: add, edit, remove; pick an Assigner and Helpers; the Mission lists i
 
   await screen.getByRole('button', { name: 'แก้ บี' }).click()
   await screen.getByLabelText('ชื่อ').fill('น้องบี')
-  await screen.getByRole('button', { name: 'บันทึก' }).click()
-  await screen.getByRole('button', { name: 'ลบ ซี' }).click()
+  await screen.getByRole('button', { name: 'บันทึก', exact: true }).click()
+  await screen.getByRole('button', { name: 'แก้ ซี' }).click()
+  await screen.getByRole('button', { name: 'ลบ ซี ออกจากรายชื่อ' }).click()
+  await screen.getByRole('button', { name: 'ยืนยันลบ ซี' }).click()
   await expect.element(screen.getByText('น้องบี')).toBeVisible()
   await expect.element(screen.getByText('ซี', { exact: true })).not.toBeInTheDocument()
 
   await screen.getByRole('button', { name: 'หน้าหลัก' }).click()
   await quickCapture(screen)
-  await screen.getByRole('button', { name: 'แก้ไข' }).click()
-  await screen.getByRole('combobox', { name: 'ผู้สั่งงาน (Assigner)' }).selectOptions('พี่เอ')
+  await screen.getByText('จัดการภารกิจ').click()
+  await screen.getByRole('button', { name: 'แก้ไข', exact: true }).click()
+  await screen.getByRole('combobox', { name: 'ผู้สั่งงาน' }).selectOptions('พี่เอ')
   await screen.getByRole('checkbox', { name: 'น้องบี' }).click()
-  await screen.getByRole('button', { name: 'บันทึก' }).click()
+  await screen.getByRole('button', { name: 'บันทึกการแก้ไข' }).click()
 
   const helpers = screen.getByRole('list', { name: 'คนที่ช่วยได้' })
   await expect.element(helpers.getByText('น้องบี')).toBeVisible()

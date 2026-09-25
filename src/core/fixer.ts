@@ -60,7 +60,7 @@ export type Settings = {
   deadlineTime: string
   stuckAfter: number // minutes
   lastExportAt?: number
-  theme: 'light' | 'dark'
+  theme: 'light' | 'dark' | 'system'
 }
 
 export type HelpKind = 'info' | 'permission' | 'skill'
@@ -73,7 +73,7 @@ export const defaultSettings: Settings = {
   reviewTime: '20:00',
   deadlineTime: '09:00',
   stuckAfter: 30,
-  theme: 'light',
+  theme: 'system',
 }
 
 export class Fixer {

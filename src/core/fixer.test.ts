@@ -557,7 +557,7 @@ describe('Settings', () => {
       reviewTime: '20:00',
       deadlineTime: '09:00',
       stuckAfter: 30,
-      theme: 'light',
+      theme: 'system',
     })
     await fixer.updateSettings({ stuckAfter: 45, theme: 'dark' })
     expect((await reload()).settings()).toMatchObject({ stuckAfter: 45, theme: 'dark', reviewTime: '20:00' })

@@ -33,13 +33,16 @@ export function InstallInvite({ ui, done }: { ui: Ui; done: () => void }) {
           <li>เปิด The Fixer จากไอคอนบนหน้าจอโฮม แล้วเปิดการแจ้งเตือน</li>
         </ol>
       ) : (
-        !p.canPrompt() && <p className="muted">ใช้เมนูของเบราว์เซอร์ → “ติดตั้งแอป” หรือ “เพิ่มไปยังหน้าจอหลัก”</p>
+        !p.canPrompt() && <p className="muted">เปิดเมนูของเบราว์เซอร์ แล้วเลือก “ติดตั้งแอป” หรือ “เพิ่มไปยังหน้าจอหลัก”</p>
       )}
-      <div className="row">
-        <button onClick={done}>ไว้ทีหลัง</button>
+      <div className="grid" style={{ rowGap: 8 }}>
+        <button className={!p.ios && p.canPrompt() ? 'c12' : 'c14'} onClick={done}>
+          ไว้ทีหลัง
+        </button>
         {!p.ios && p.canPrompt() && (
           <button
             className="primary"
+            style={{ gridColumn: '3 / 5' }}
             onClick={async () => {
               await p.prompt()
               done()

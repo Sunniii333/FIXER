@@ -21,10 +21,10 @@ it('export records the backup time; import compares, cancels untouched, then rep
   await quickCapture(screen, 'งานในเครื่อง')
   await screen.getByRole('button', { name: 'ตั้งค่า' }).click()
   await expect.element(screen.getByText('ยังไม่เคย', { exact: false })).toBeVisible()
-  await screen.getByRole('button', { name: 'ส่งออกไฟล์สำรอง' }).click()
+  await screen.getByRole('button', { name: 'สำรองตอนนี้' }).click()
   await expect.element(screen.getByText('ยังไม่เคย', { exact: false })).not.toBeInTheDocument()
 
-  const input = screen.getByLabelText('นำเข้าไฟล์สำรอง (แทนที่ข้อมูลทั้งหมด)')
+  const input = screen.getByLabelText('กู้จากไฟล์')
   await userEvent.upload(input, await backupFile(['จากไฟล์ 1', 'จากไฟล์ 2']))
   const dialog = screen.getByRole('dialog', { name: 'ยืนยันการนำเข้า' })
   await expect.element(dialog.getByRole('row', { name: 'ภารกิจ 2 1' })).toBeVisible()
@@ -43,19 +43,19 @@ it('export records the backup time; import compares, cancels untouched, then rep
 it('rejects a bad import file with a clear message', async () => {
   const screen = await render(<App ports={fakePorts()} />)
   await screen.getByRole('button', { name: 'ตั้งค่า' }).click()
-  const input = screen.getByLabelText('นำเข้าไฟล์สำรอง (แทนที่ข้อมูลทั้งหมด)')
+  const input = screen.getByLabelText('กู้จากไฟล์')
   await userEvent.upload(input, new File(['{"version": 9}'], 'bad.json'))
   await expect.poll(() => screen.getByRole('alert').query()?.textContent).toContain('เวอร์ชัน 9')
   await expect.element(screen.getByRole('dialog')).not.toBeInTheDocument()
 })
 
-it('the dark toggle applies at once and survives a reload', async () => {
+it('the dark theme applies at once and survives a reload', async () => {
   const ports = fakePorts()
   const screen = await render(<App ports={ports} />)
   const bg = () => getComputedStyle(document.body).backgroundColor
   const light = bg()
   await screen.getByRole('button', { name: 'ตั้งค่า' }).click()
-  await screen.getByLabelText('โหมดมืด').click()
+  await screen.getByLabelText('มืด', { exact: true }).click()
   await expect.poll(() => document.documentElement.dataset.theme).toBe('dark')
   expect(bg()).not.toBe(light)
 

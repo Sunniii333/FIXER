@@ -23,6 +23,7 @@ it('re-syncs when a Mission without a First step is deleted', async () => {
   const screen = await render(<App ports={ports} />)
   await quickCapture(screen)
   await expect.poll(() => fiveMinute(ports)).toHaveLength(1)
+  await screen.getByText('จัดการภารกิจ').click()
   await screen.getByRole('button', { name: 'ลบ (สร้างผิด)' }).click()
   await expect.poll(() => fiveMinute(ports)).toEqual([])
 })
@@ -36,12 +37,12 @@ it('re-syncs on a settings change, and turning reminders off clears the schedule
   await expect.poll(() => last(ports).find((e) => e.kind === 'review')?.dueAt).toBe(new Date(2026, 8, 1, 20, 0).getTime())
 
   await screen.getByRole('button', { name: 'ตั้งค่า' }).click()
-  await screen.getByLabelText('เวลาเตือนทบทวนประจำวัน').fill('21:15')
+  await screen.getByLabelText('เตือนทบทวนประจำวัน').fill('21:15')
   await expect.poll(() => last(ports).find((e) => e.kind === 'review')?.dueAt).toBe(new Date(2026, 8, 1, 21, 15).getTime())
-  await screen.getByLabelText('เตือนว่าติดขัดเมื่อก้าวเดียวนานเกิน (นาที)').fill('60')
+  await screen.getByLabelText('เตือนเมื่อค้างก้าวเดียวเกิน (นาที)').fill('60')
   await expect.poll(() => last(ports).find((e) => e.kind === 'stuck')?.dueAt).toBe(T0 + 60 * MIN)
 
-  await screen.getByLabelText('เปิดการแจ้งเตือน').click()
+  await screen.getByRole('switch', { name: 'แจ้งเตือน' }).click()
   await expect.poll(() => last(ports)).toEqual([])
 })
 

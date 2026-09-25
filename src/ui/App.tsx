@@ -2,8 +2,8 @@
 // Every screen that touches Mission content lives under this client component.
 // Mission data is loaded from the Storage port in the browser, never from the server.
 import { useEffect, useReducer, useRef, useState } from 'react'
-import { Fixer, UNDO_MS, type Clock, type Mission, type ReminderKind, type Storage } from '../core/fixer'
-import { MissionPage, NameStep, dateLabel, mmss } from './MissionPage'
+import { Fixer, UNDO_MS, currentStep, type Clock, type Mission, type ReminderKind, type Storage } from '../core/fixer'
+import { MissionPage, ReplanScreen, dateLabel, mmss } from './MissionPage'
 import { EditForm, Walkthrough } from './EditMission'
 import { People } from './People'
 import { Review } from './Review'
@@ -84,10 +84,12 @@ export function App({ ports }: { ports: Ports }) {
     Fixer.open(ports.clock, ports.storage).then(setFixer)
   }, [ports])
 
-  // The theme is a device-only preference: applied here, never synced anywhere.
+  // The theme is a device-only preference: applied here, never synced anywhere. 'system' follows the phone.
   const theme = fixer?.settings().theme
   useEffect(() => {
-    if (theme) document.documentElement.dataset.theme = theme
+    if (!theme) return
+    if (theme === 'system') delete document.documentElement.dataset.theme
+    else document.documentElement.dataset.theme = theme
   }, [theme])
 
   // Re-sync whenever the derived schedule changes (create, Step change, close, drop, delete, settings…).
@@ -129,8 +131,10 @@ export function App({ ports }: { ports: Ports }) {
     invite: () => setInvite('asked'),
   }
 
+  // Focused flows hide the tab bar: one task, one way out.
+  const focus = screen === 'walk' || screen === 'edit' || screen === 'replan'
   return (
-    <div className="app">
+    <div className={focus ? 'app focus' : 'app'}>
       <main className="screen">
         {screen === 'people' ? (
           <People ui={ui} />
@@ -146,6 +150,8 @@ export function App({ ports }: { ports: Ports }) {
           <Home ui={ui} />
         ) : screen === 'm' ? (
           <MissionPage ui={ui} id={param} />
+        ) : screen === 'replan' ? (
+          <ReplanScreen ui={ui} id={param} />
         ) : screen === 'walk' ? (
           <Walkthrough ui={ui} id={param} back={missionPath(fixer.mission(param)!)} />
         ) : screen === 'edit' ? (
@@ -168,18 +174,20 @@ export function App({ ports }: { ports: Ports }) {
           </button>
         </div>
       )}
-      <nav className="tabbar">
-        {[
-          ['', 'หน้าหลัก'],
-          ['people', 'คน'],
-          ['review', 'ทบทวน'],
-          ['settings', 'ตั้งค่า'],
-        ].map(([path, label]) => (
-          <button key={path} aria-current={(screen || '') === path ? 'page' : undefined} onClick={() => go(path)}>
-            {label}
-          </button>
-        ))}
-      </nav>
+      {!focus && (
+        <nav className="tabbar">
+          {[
+            ['', 'หน้าหลัก'],
+            ['people', 'คน'],
+            ['review', 'ทบทวน'],
+            ['settings', 'ตั้งค่า'],
+          ].map(([path, label]) => (
+            <button key={path} aria-current={(screen || '') === path ? 'page' : undefined} onClick={() => go(path)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+      )}
     </div>
   )
 }
@@ -191,82 +199,146 @@ function StatsStrip({ ui }: { ui: Ui }) {
   const s = ui.fixer.stats()
   const pct = s.rate.total ? Math.round((100 * s.rate.onTime) / s.rate.total) : undefined
   return (
-    <dl className="stats" aria-label="สถิติ">
-      <div>
-        <dt>เริ่มทันเวลา (เดือนนี้)</dt>
-        <dd>{pct === undefined ? '—' : `${pct}%`}</dd>
-        <small>{s.rate.onTime}/{s.rate.total}</small>
+    <section className="row thick" aria-label="สถิติ" style={{ alignItems: 'end' }}>
+      <div className="c12">
+        <p className="big-num" style={{ color: 'var(--accent)' }}>
+          {pct === undefined ? '—' : `${pct}%`}
+        </p>
+        <p className="muted">
+          เริ่มทันเวลา เดือนนี้ {s.rate.total > 0 && `(${s.rate.onTime}/${s.rate.total})`}
+        </p>
       </div>
-      <div>
-        <dt>ปิดเดือนนี้</dt>
-        <dd>{s.closedThisMonth}</dd>
+      <div className="c3">
+        <p className="num">{s.closedThisMonth}</p>
+        <p className="muted">ปิดแล้ว</p>
       </div>
-      <div className={s.overdue ? 'hot' : ''}>
-        <dt>ค้างอยู่</dt>
-        <dd>{s.open}</dd>
-        {s.overdue > 0 && <small>เลยกำหนด {s.overdue}</small>}
+      <div className="c4">
+        <p className="num">{s.open}</p>
+        <p className="muted">ค้างอยู่</p>
+        {s.overdue > 0 && <p className="hot" style={{ fontSize: 14 }}>เลยกำหนด {s.overdue}</p>}
       </div>
-    </dl>
+    </section>
   )
 }
 
-const statusLabel = { draft: 'ร่าง', queued: 'รอคิว', active: 'กำลังทำ', done: 'เสร็จแล้ว', dropped: 'ยกเลิกแล้ว' }
+/** One Mission in a list: what it is and what happens next. */
+export function MissionRow({ ui, m }: { ui: Ui; m: Mission }) {
+  const { fixer } = ui
+  const left = fixer.countdown(m.id)
+  const current = currentStep(m)
+  const sub =
+    m.status === 'draft'
+      ? m.steps[0]?.text.trim()
+        ? `ร่าง ก้าวแรก: ${m.steps[0].text}`
+        : 'ร่าง ยังไม่ตั้งก้าวแรก'
+      : m.status === 'done'
+        ? `เสร็จ ${dateLabel(m.doneAt!)}`
+        : current?.text.trim()
+          ? `ต่อไป: ${current.text}`
+          : m.status === 'active'
+            ? 'ยังไม่ได้ตั้งก้าวต่อไป'
+            : undefined
+  return (
+    <a className="item" href={`#/${missionPath(m)}`}>
+      {fixer.isOverdue(m.id) ? (
+        <span className="tag">เลยกำหนด</span>
+      ) : (
+        left !== undefined && (
+          <span className="item-clock" aria-label="เวลาที่เหลือของห้านาที">
+            {mmss(left)}
+          </span>
+        )
+      )}
+      <span className="body">
+        <strong>{m.instruction || '(ยังไม่มีคำสั่งงาน)'}</strong>
+        {sub && <span className="muted">{sub}</span>}
+        {fixer.isStuck(m.id) && <span className="dot">ค้างก้าวนี้เกิน {fixer.settings().stuckAfter} นาที</span>}
+      </span>
+      <span className="go" aria-hidden={m.status !== 'draft'}>
+        {m.status === 'draft' ? 'ทำต่อ ›' : '›'}
+      </span>
+    </a>
+  )
+}
 
 function Home({ ui }: { ui: Ui }) {
-  const missions = ui.fixer.homeList()
-  const dropped = ui.fixer.missions().filter((m) => m.status === 'dropped')
+  const { fixer } = ui
+  const missions = fixer.homeList()
+  const notStarted = (m: Mission) => (m.status === 'draft' || m.status === 'active') && !m.steps.some((s) => s.outcome)
+  const urgent = missions.filter((m) => fixer.isOverdue(m.id) || notStarted(m))
+  const doing = missions.filter((m) => !urgent.includes(m) && m.status === 'active')
   // An overdue Queued Mission joins the overdue group at the top (homeList already puts it there).
-  const queued = missions.filter((m) => m.status === 'queued' && !ui.fixer.isOverdue(m.id))
-  const card = (m: Mission) => (
-    <li key={m.id}>
-      <a className="card" href={`#/${missionPath(m)}`}>
-        {ui.fixer.isOverdue(m.id) ? (
-          <span className="tag bad">เลยกำหนด</span>
-        ) : (
-          <span className="tag">{statusLabel[m.status]}</span>
-        )}
-        <span>{m.instruction || '(ยังไม่มีคำสั่งงาน)'}</span>
-        {m.status === 'draft' && <small className="muted">ทำต่อ ›</small>}
-      </a>
-    </li>
-  )
+  const queued = missions.filter((m) => m.status === 'queued' && !urgent.includes(m))
+  const done = missions.filter((m) => m.status === 'done')
+  const dropped = fixer.missions().filter((m) => m.status === 'dropped')
+  const group = (label: string, ms: Mission[]) =>
+    ms.length > 0 && (
+      <section className="row mid" aria-label={label}>
+        <h2 className="lab">{label}</h2>
+        <div className="val items">
+          {ms.map((m) => (
+            <MissionRow key={m.id} ui={ui} m={m} />
+          ))}
+        </div>
+      </section>
+    )
   return (
     <>
       <h1>ภารกิจ</h1>
       <RemindersNotice ui={ui} showInstall={ui.invite} />
       <StatsStrip ui={ui} />
-      {missions.length === 0 && <p className="muted">ยังไม่มีภารกิจ กด “รับภารกิจ” เมื่อได้รับงาน</p>}
-      <ul className="list">{missions.filter((m) => m.status !== 'done' && !queued.includes(m)).map(card)}</ul>
+      {missions.length === 0 && dropped.length === 0 && (
+        <p className="empty">ยังไม่มีภารกิจ ได้รับงานเมื่อไร กด “รับภารกิจ” แล้วเวลา 5 นาทีจะเริ่มนับ</p>
+      )}
+      {group('ต้องจัดการก่อน', urgent)}
+      {group('กำลังทำ', doing)}
       {queued.length > 0 && (
-        <section aria-label="รอคิว">
-          <h2>รอคิว ({queued.length})</h2>
-          <ul className="list">
+        <section className="row mid" aria-label="รอคิว">
+          <h2 className="lab">รอคิว ({queued.length})</h2>
+          <div className="val items">
             {queued.map((m) => (
-              <QueuedCard key={m.id} ui={ui} m={m} />
+              <QueuedRow key={m.id} ui={ui} m={m} />
             ))}
-          </ul>
+          </div>
         </section>
       )}
-      <ul className="list">{missions.filter((m) => m.status === 'done').map(card)}</ul>
-      {dropped.length > 0 && (
-        <details className="history">
-          <summary>ยกเลิกแล้ว ({dropped.length})</summary>
-          <section aria-label="ยกเลิกแล้ว">
-            <ul className="list">
-              {dropped.map((m) => (
-                <li key={m.id}>
-                  <a className="card" href={`#/m/${m.id}`}>
-                    <span>{m.instruction}</span>
-                    <small className="muted">{m.dropReason}</small>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </details>
+      {(done.length > 0 || dropped.length > 0) && (
+        <div className="row mid">
+          <h2 className="lab">ปิดแล้ว</h2>
+          <div className="val">
+            {done.length > 0 && (
+              <details>
+                <summary>เสร็จแล้ว ({done.length})</summary>
+                <div className="items">
+                  {done.map((m) => (
+                    <MissionRow key={m.id} ui={ui} m={m} />
+                  ))}
+                </div>
+              </details>
+            )}
+            {dropped.length > 0 && (
+              <details>
+                <summary>ยกเลิกแล้ว ({dropped.length})</summary>
+                <section aria-label="ยกเลิกแล้ว" className="items">
+                  {dropped.map((m) => (
+                    <a key={m.id} className="item" href={`#/m/${m.id}`}>
+                      <span className="body">
+                        <strong>{m.instruction}</strong>
+                        <span className="muted">{m.dropReason}</span>
+                      </span>
+                      <span className="go" aria-hidden>
+                        ›
+                      </span>
+                    </a>
+                  ))}
+                </section>
+              </details>
+            )}
+          </div>
+        </div>
       )}
       <div className="actions">
-        <button className="primary big" onClick={() => ui.go(`receive/${crypto.randomUUID()}`)}>
+        <button className="primary" onClick={() => ui.go(`receive/${crypto.randomUUID()}`)}>
           รับภารกิจ
         </button>
       </div>
@@ -279,50 +351,28 @@ function waited(ms: number) {
   return min < 60 ? `${min} นาที` : min < 24 * 60 ? `${Math.floor(min / 60)} ชม.` : `${Math.floor(min / (24 * 60))} วัน`
 }
 
-/** No countdown while Queued: only how long it has waited. */
-function QueuedCard({ ui, m }: { ui: Ui; m: Mission }) {
-  const { fixer } = ui
-  const [dropping, setDropping] = useState(false)
+/** No countdown while Queued: only how long it has waited. Dropping or deleting lives in its edit screen. */
+function QueuedRow({ ui, m }: { ui: Ui; m: Mission }) {
   return (
-    <li className="card">
-      <a href={`#/${missionPath(m)}`}>{m.instruction}</a>
-      <small className="muted">
-        {m.deadlineAt !== undefined && `กำหนดส่ง ${dateLabel(m.deadlineAt)} · `}
-        รอมา {waited(ui.ports.clock.now() - m.queuedAt!)}
-      </small>
-      {dropping ? (
-        <NameStep
-          label="ทำไมถึงยกเลิก?"
-          button="ยืนยันยกเลิก"
-          onCancel={() => setDropping(false)}
-          onSave={(reason) => ui.run(() => fixer.drop(m.id, reason))}
-        />
-      ) : (
-        <div className="row">
-          <button
-            className="primary"
-            onClick={async () => {
-              await ui.run(() => fixer.pickUp(m.id))
-              ui.go(`receive/${m.id}`)
-            }}
-          >
-            หยิบ
-          </button>
-          <button className="link" onClick={() => setDropping(true)}>
-            ยกเลิกภารกิจ
-          </button>
-          <button
-            className="link"
-            onClick={async () => {
-              await ui.run(() => fixer.delete(m.id))
-              ui.deleted()
-            }}
-          >
-            ลบ
-          </button>
-        </div>
-      )}
-    </li>
+    <div className="item">
+      <a className="body" href={`#/${missionPath(m)}`}>
+        <strong>{m.instruction}</strong>
+        <span className="muted">
+          {m.deadlineAt !== undefined && `ส่ง ${dateLabel(m.deadlineAt)}, `}
+          รอมา {waited(ui.ports.clock.now() - m.queuedAt!)}
+        </span>
+      </a>
+      <button
+        className="primary"
+        style={{ minHeight: 44, fontSize: 15, flex: 'none' }}
+        onClick={async () => {
+          await ui.run(() => ui.fixer.pickUp(m.id))
+          ui.go(`receive/${m.id}`)
+        }}
+      >
+        หยิบ
+      </button>
+    </div>
   )
 }
 
@@ -338,9 +388,11 @@ function Receive({ ui, captureId }: { ui: Ui; captureId: string }) {
   if (m.status !== 'draft') return <MissionPage ui={ui} id={m.id} />
   const pickedUp = m.pickedUpAt !== undefined
   const ready = m.instruction.trim() && m.steps[0]?.text.trim()
+  const left = fixer.countdown(m.id)!
   return (
     <form
       className="stack"
+      style={{ flex: 1, gap: 0 }}
       onSubmit={async (e) => {
         e.preventDefault()
         if (!ready) return
@@ -348,56 +400,83 @@ function Receive({ ui, captureId }: { ui: Ui; captureId: string }) {
         ui.go(`m/${m.id}`)
       }}
     >
-      <h1>รับภารกิจ</h1>
-      <p className="clock small" aria-label="เวลาที่เหลือของห้านาที">
-        {mmss(fixer.countdown(m.id)!)}
-      </p>
-      <label>
-        คำสั่งงาน
-        <textarea
-          autoFocus={!pickedUp}
-          rows={3}
-          value={m.instruction}
-          onChange={(e) => ui.run(() => fixer.edit(m.id, { instruction: e.target.value }))}
-        />
-      </label>
-      <label>
-        ก้าวแรก
-        <input
-          autoFocus={pickedUp}
-          value={m.steps[0]?.text ?? ''}
-          placeholder="สิ่งที่ลงมือทำได้ภายใน 5 นาที"
-          onChange={(e) => ui.run(() => fixer.edit(m.id, { firstStep: e.target.value }))}
-        />
-      </label>
-      <div className="actions">
-        <button type="button" onClick={() => ui.go(`walk/${m.id}`)}>
-          ถามทีละข้อ (เป้าหมาย กำหนดส่ง แผนสำรอง)
-        </button>
-        <button className="primary big" disabled={!ready}>
-          เริ่มลงมือ
-        </button>
-        {fixer.canQueue(m.id) && (
+      <div className="grid" style={{ alignItems: 'end', paddingBottom: 12 }}>
+        <h1 className="c13" style={{ margin: 0 }}>
+          รับภารกิจ
+        </h1>
+        <p
+          className="c4 num"
+          style={{ textAlign: 'right', color: left === 0 ? 'var(--ink)' : 'var(--accent)' }}
+          aria-label="เวลาที่เหลือของห้านาที"
+        >
+          {mmss(left)}
+        </p>
+      </div>
+      <div className="row mid">
+        <label className="lab" htmlFor="instruction">
+          คำสั่งงาน
+        </label>
+        <div className="val">
+          <textarea
+            id="instruction"
+            autoFocus={!pickedUp}
+            rows={3}
+            value={m.instruction}
+            placeholder="เขียนตามที่ผู้สั่งพูด"
+            onChange={(e) => ui.run(() => fixer.edit(m.id, { instruction: e.target.value }))}
+          />
+        </div>
+      </div>
+      <div className="row">
+        <label className="lab" htmlFor="first-step">
+          ก้าวแรก
+        </label>
+        <div className="val">
+          <input
+            id="first-step"
+            autoFocus={pickedUp}
+            value={m.steps[0]?.text ?? ''}
+            placeholder="สิ่งที่ลงมือทำได้ภายใน 5 นาที"
+            onChange={(e) => ui.run(() => fixer.edit(m.id, { firstStep: e.target.value }))}
+          />
+        </div>
+      </div>
+      <div className="row">
+        <span className="lab">ตัวเลือก</span>
+        <div className="val">
+          <div className="chips">
+            <button type="button" className="small" onClick={() => ui.go(`walk/${m.id}`)}>
+              ตอบคำถามเพิ่ม
+            </button>
+            {fixer.canQueue(m.id) && (
+              <button
+                type="button"
+                className="small"
+                disabled={!m.instruction.trim()}
+                onClick={async () => {
+                  await ui.run(() => fixer.queue(m.id))
+                  ui.go('')
+                }}
+              >
+                เข้าคิวไว้ก่อน
+              </button>
+            )}
+          </div>
           <button
             type="button"
-            disabled={!m.instruction.trim()}
+            className="link"
             onClick={async () => {
-              await ui.run(() => fixer.queue(m.id))
-              ui.go('')
+              await ui.run(() => fixer.delete(m.id))
+              ui.deleted()
             }}
           >
-            เข้าคิว (ยังไม่เริ่มนับเวลา)
+            ลบร่างนี้
           </button>
-        )}
-        <button
-          type="button"
-          className="link"
-          onClick={async () => {
-            await ui.run(() => fixer.delete(m.id))
-            ui.deleted()
-          }}
-        >
-          ลบร่างนี้ (รับผิด)
+        </div>
+      </div>
+      <div className="actions">
+        <button className="primary" disabled={!ready}>
+          เริ่มลงมือ
         </button>
       </div>
     </form>

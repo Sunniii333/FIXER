@@ -9,8 +9,8 @@ it('walkthrough: one question per screen, each skippable, flags update', async (
   await quickCapture(screen)
   await expect.element(screen.getByText('เป้ายังไม่ชัด')).toBeVisible()
 
-  await screen.getByRole('button', { name: 'เติมรายละเอียด' }).click()
-  await screen.getByLabelText('งานเสร็จแล้วหน้าตาเป็นอย่างไร?').fill('ส่งไฟล์ให้หัวหน้าทางอีเมล')
+  await screen.getByRole('button', { name: 'กำหนดเป้า' }).click()
+  await screen.getByLabelText('งานเสร็จแล้ว หน้าตาเป็นอย่างไร?').fill('ส่งไฟล์ให้หัวหน้าทางอีเมล')
   await screen.getByRole('button', { name: 'ถัดไป' }).click()
   await screen.getByLabelText('ต้องเสร็จเมื่อไร?').fill('ก่อนประชุมวันพฤหัส')
   await expect.element(screen.getByText('ใส่วันที่ด้วยไหม?', { exact: false })).toBeVisible()
@@ -27,9 +27,10 @@ it('walkthrough: one question per screen, each skippable, flags update', async (
 it('แผนพัง: shows Plan B, asks for the new Step and a reason, and the Mission shows the Replan', async () => {
   const screen = await render(<App ports={fakePorts()} />)
   await quickCapture(screen, 'ทำรายงาน', 'ขอไฟล์จากบัญชี')
-  await screen.getByRole('button', { name: 'แก้ไข' }).click()
-  await screen.getByLabelText('ถ้าพัง จะทำอะไรแทน? (Plan B)').fill('ใช้ตัวเลขเดือนก่อน')
-  await screen.getByRole('button', { name: 'บันทึก' }).click()
+  await screen.getByText('จัดการภารกิจ').click()
+  await screen.getByRole('button', { name: 'แก้ไข', exact: true }).click()
+  await screen.getByLabelText('แผนสำรอง').fill('ใช้ตัวเลขเดือนก่อน')
+  await screen.getByRole('button', { name: 'บันทึกการแก้ไข' }).click()
 
   await screen.getByRole('button', { name: 'แผนพัง' }).click()
   await expect.element(screen.getByText('ใช้ตัวเลขเดือนก่อน')).toBeVisible()
@@ -38,7 +39,8 @@ it('แผนพัง: shows Plan B, asks for the new Step and a reason, and th
   await screen.getByRole('button', { name: 'เปลี่ยนแผน' }).click()
 
   await expect.element(screen.getByText('แผนพัง 1 ครั้ง: รอคนอื่นอยู่')).toBeVisible()
-  await expect.element(screen.getByText('ประมาณจากเดือนก่อน')).toBeVisible()
+  await expect.element(screen.getByRole('region', { name: 'ก้าวที่ต้องทำตอนนี้' }).getByText('ประมาณจากเดือนก่อน')).toBeVisible()
+  await screen.getByText(/ประวัติก้าว/).click()
   await expect.element(screen.getByText('แผนพัง — เลิกทางนี้')).toBeVisible()
   await expect.element(screen.getByRole('button', { name: 'ทำก้าวแรกแล้ว' })).not.toBeInTheDocument()
 })
@@ -57,6 +59,7 @@ it('close, reopen with a new Step, and drop with a reason', async () => {
   await expect.element(screen.getByRole('button', { name: 'เสร็จก้าวนี้' })).toBeVisible()
   await expect.element(screen.getByText('เริ่มทันเวลา')).toBeVisible()
 
+  await screen.getByText('จัดการภารกิจ').click()
   await screen.getByRole('button', { name: 'ยกเลิกภารกิจ' }).click()
   await screen.getByLabelText('ทำไมถึงยกเลิก?').fill('ลูกค้ายกเลิกโปรเจกต์')
   await screen.getByRole('button', { name: 'ยืนยันยกเลิก' }).click()
@@ -71,6 +74,7 @@ it('close, reopen with a new Step, and drop with a reason', async () => {
 it('delete can be undone for a few seconds', async () => {
   const screen = await render(<App ports={fakePorts()} />)
   await quickCapture(screen, 'สร้างผิด')
+  await screen.getByText('จัดการภารกิจ').click()
   await screen.getByRole('button', { name: 'ลบ (สร้างผิด)' }).click()
   await expect.element(screen.getByText('สร้างผิด')).not.toBeInTheDocument()
   await screen.getByRole('button', { name: 'เลิกทำ' }).click()
@@ -98,7 +102,7 @@ it('a Draft shows its countdown and can be deleted with undo', async () => {
   await screen.getByRole('button', { name: 'รับภารกิจ' }).click()
   ports.clock.advance(60_000)
   await expect.element(screen.getByText('4:00')).toBeVisible()
-  await screen.getByRole('button', { name: 'ลบร่างนี้ (รับผิด)' }).click()
+  await screen.getByRole('button', { name: 'ลบร่างนี้' }).click()
   await expect.element(screen.getByRole('button', { name: 'เลิกทำ' })).toBeVisible()
   await expect.element(screen.getByText('ร่าง', { exact: true })).not.toBeInTheDocument()
 })

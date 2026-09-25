@@ -34,7 +34,7 @@ it('first-step tap: countdown from receipt, tap records the start, then the next
   await screen.getByLabelText('ก้าวต่อไปคืออะไร?').fill('โทรหาฝ่ายบัญชี')
   await screen.getByRole('button', { name: 'ตั้งก้าวนี้' }).click()
   await expect.element(screen.getByRole('button', { name: 'เสร็จก้าวนี้' })).toBeVisible()
-  await expect.element(screen.getByText('โทรหาฝ่ายบัญชี')).toBeVisible()
+  await expect.element(screen.getByRole('region', { name: 'ก้าวที่ต้องทำตอนนี้' }).getByText('โทรหาฝ่ายบัญชี')).toBeVisible()
 })
 
 it('keeps the receive button in the lower half of a phone screen', async () => {
